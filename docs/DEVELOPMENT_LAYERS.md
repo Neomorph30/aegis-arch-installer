@@ -44,7 +44,7 @@ Read-only hardware probes, storage proposals, Btrfs/ext4 layout proposals, TUI w
 **Exit:** fixtures cover NVMe, SATA, MMC, USB live media, arrays, hotplug, duplicate IDs and ambiguous configurations, all failing closed when necessary.
 
 ### Layer 04 — Complete accessible installer wizard and networking
-**State: PARTIAL; the guided storage proposal flow and bounded input recovery are merged, but full installer configuration and persistent networking are not implemented. Depends on Layers 01,03.**
+**State: PARTIAL; guided storage proposals, bounded invalid-input retries, EOF/Ctrl-C cancellation and recovery from inventory/network preflight errors are merged. Full installer configuration and live-to-installed persistent networking remain unimplemented. Depends on Layers 01,03.**
 - TUI keyboard navigation, help and accessibility; language, region, user, device, filesystem, security, desktop and optional-module steps.
 - Read-only connectivity diagnostic; opt-in Wi-Fi via system tools; distinguish DNS/TLS/captive portal and unreachable mirrors.
 - Present constraints and dependencies *before* user commits choices; support going back safely.
