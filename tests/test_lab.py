@@ -97,6 +97,12 @@ class WorkspaceTests(unittest.TestCase):
             self.assertIn('-display none', joined)
             self.assertIn('-nic none', joined)
             self.assertIn('-display gtk', ' '.join(command_lines(config, fw, output, interactive=True)[1]))
+            _, observed_vm = command_lines(config, fw, output, observe_boot=True)
+            observed = ' '.join(observed_vm)
+            self.assertIn('-display vnc=127.0.0.1:0', observed)
+            self.assertNotIn('-display gtk', observed)
+            self.assertIn('-nic none', observed)
+            self.assertNotIn('hostfwd=', observed)
 
     def test_explicit_user_nat_is_opt_in_and_has_no_port_forwarding(self):
         with tempfile.TemporaryDirectory() as d:
@@ -222,6 +228,9 @@ class CLITests(unittest.TestCase):
     def test_missing_dependencies_refuse(self):
         with patch('lab.runtime.os.geteuid', return_value=1000), patch('lab.runtime.dependencies', return_value={k: False for k in ('qemu_present', 'swtpm_present','ovmf_pair_present')}):
             self.assertEqual(main(['--smoke']), 2)
+
+    def test_boot_observation_requires_smoke_mode(self):
+        self.assertEqual(main(['--run', '--observe-boot', '--iso', '/missing.iso', '--iso-sha256', '0' * 64]), 2)
 
 if __name__ == '__main__':
     unittest.main()
