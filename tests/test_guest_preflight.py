@@ -5,6 +5,7 @@ import contextlib
 import io
 import json
 import unittest
+from unittest import mock
 
 from lab.guest_preflight import main, run_preflight
 from lab.guest_probe import GuestProbeError
@@ -46,7 +47,7 @@ class GuestPreflightCLITests(unittest.TestCase):
 
     def test_cli_emits_machine_readable_json(self):
         with contextlib.redirect_stdout(io.StringIO()) as stdout, contextlib.redirect_stderr(io.StringIO()):
-            with unittest.mock.patch("lab.guest_preflight.run_preflight",
+            with mock.patch("lab.guest_preflight.run_preflight",
                                      return_value=(0, {"status": "PREFLIGHT_ONLY", "execution_enabled": False})):
                 code = main([])
         self.assertEqual(code, 0)
