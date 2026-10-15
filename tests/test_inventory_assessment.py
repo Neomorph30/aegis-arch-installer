@@ -71,6 +71,13 @@ class InventoryAssessmentTests(unittest.TestCase):
         self.assertEqual(result["status"], "blocked")
         self.assertTrue(any(f["code"] == "MALFORMED_MOUNTPOINTS" for f in result["findings"]))
 
+    def test_missing_holder_state_blocks(self):
+        value = disk()
+        value.pop("holders")
+        result = assess(value)
+        self.assertEqual(result["status"], "blocked")
+        self.assertTrue(any(f["code"] == "MALFORMED_HOLDERS" for f in result["findings"]))
+
     def test_malformed_identifier_blocks(self):
         for key, value in (("serial", 42), ("wwn", []), ("serial", "SERIAL\nA")):
             with self.subTest(key=key, value=value):
