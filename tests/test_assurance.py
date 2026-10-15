@@ -25,6 +25,14 @@ class AssuranceTests(unittest.TestCase):
         self.assertTrue(all(c.description and c.evidence for c in CAPABILITIES))
         self.assertEqual(next(c.status for c in CAPABILITIES if c.id == "privileged-executor"), "NOT_IMPLEMENTED")
 
+    def test_layer07_primitives_are_preview_only_and_not_installation(self):
+        capabilities = {item.id: item for item in CAPABILITIES}
+        for name in ("disposable-vm-lab", "guest-install-preflight", "iso-integrity-gate", "transaction-journal"):
+            self.assertEqual(capabilities[name].status, "PREVIEW_ONLY")
+            self.assertTrue(capabilities[name].evidence)
+        self.assertEqual(capabilities["privileged-executor"].status, "NOT_IMPLEMENTED")
+        self.assertFalse(manifest()["installation_enabled"])
+
     def test_cli_assurance_json(self):
         p = subprocess.run([sys.executable, "-m", "aegis", "assurance", "--json"],
                            cwd=ROOT, capture_output=True, text=True, timeout=10)
