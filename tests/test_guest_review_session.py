@@ -78,6 +78,22 @@ class GuestReviewSessionTests(unittest.TestCase):
         self.assertEqual(result["status"], "BLOCKED")
         self.assertEqual(self.journal.read()[-1]["note_code"], "probe_timeout")
 
+    def test_probe_failure_after_confirmation_stops_and_preserves_evidence(self):
+        obs = sample()
+        calls = 0
+        def probe():
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                raise GuestProbeError("fresh target probe failed")
+            return copy.deepcopy(obs)
+        result = run_review_session(self.journal, probe=probe,
+                                    confirm=lambda plan, phrase: phrase)
+        self.assertEqual(result["status"], "BLOCKED")
+        events = self.journal.read()
+        self.assertEqual(events[-1]["event_type"], "recovery_decision")
+        self.assertEqual(events[-1]["status"], "STOP_AND_PRESERVE_EVIDENCE")
+
     def test_existing_journal_is_not_overwritten(self):
         self.journal.path.write_text("preserve")
         result = run_review_session(self.journal, probe=sample, confirm=lambda plan, phrase: phrase)
