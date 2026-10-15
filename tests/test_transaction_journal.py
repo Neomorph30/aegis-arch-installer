@@ -32,6 +32,19 @@ class TransactionJournalTests(unittest.TestCase):
         self.assertEqual(events[1]["event_hash"], result["event_hash"])
         self.assertEqual(assess_recovery(events)["action"], "REVIEW_BEFORE_NEXT_PHASE")
 
+    def test_new_journal_fsyncs_file_and_parent_directory(self):
+        from unittest.mock import patch
+        with patch("lab.transaction_journal.os.fsync", wraps=os.fsync) as sync:
+            self.journal.append("phase_intent", phase="preflight", status="STARTED")
+        self.assertEqual(sync.call_count, 2)
+
+    def test_existing_journal_append_fsyncs_file(self):
+        self.journal.append("phase_intent", phase="preflight", status="STARTED")
+        from unittest.mock import patch
+        with patch("lab.transaction_journal.os.fsync", wraps=os.fsync) as sync:
+            self.journal.append("phase_result", phase="preflight", status="SUCCEEDED")
+        self.assertEqual(sync.call_count, 1)
+
     def test_destructive_failure_requires_preserving_evidence(self):
         self.journal.append("phase_intent", phase="partition_gpt", status="STARTED")
         self.journal.append("phase_result", phase="partition_gpt", status="FAILED",
