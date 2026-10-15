@@ -178,7 +178,7 @@ def assess_inventory(observation: dict[str, Any]) -> dict[str, Any]:
         elif ambiguous:
             reasons.append("ambiguous_identity")
 
-        if kind in {"crypt", "lvm", "raid", "md", "mpath", "dm"}:
+        if isinstance(kind, str) and kind in {"crypt", "lvm", "raid", "md", "mpath", "dm"}:
             reasons.append("has_holders")
         for reason in dict.fromkeys(reasons):
             if reason not in {"malformed"}:
