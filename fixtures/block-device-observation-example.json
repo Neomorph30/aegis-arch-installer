@@ -1,0 +1,31 @@
+{
+  "devices": [
+    {
+      "path": "/dev/example0",
+      "type": "disk",
+      "serial": "FIXTURE-SERIAL-001",
+      "wwn": "FIXTURE-WWN-001",
+      "mountpoints": [
+        null
+      ],
+      "holders": [],
+      "active_swap": false,
+      "ambiguous": false,
+      "children": [
+        {
+          "path": "/dev/example0p1",
+          "type": "part",
+          "serial": null,
+          "wwn": null,
+          "mountpoints": [
+            null
+          ],
+          "holders": [],
+          "active_swap": false,
+          "ambiguous": false,
+          "children": []
+        }
+      ]
+    }
+  ]
+}
