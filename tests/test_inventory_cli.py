@@ -9,7 +9,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from aegis.cli import main
+from aegis.cli import _require_live_target_reviewable, main
+from aegis.planner import PlanError
 
 
 def observation(**overrides):
@@ -75,6 +76,31 @@ class InventoryAssessorCliTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(stdout.getvalue(), "")
         self.assertIn("swap state unavailable", stderr.getvalue())
+
+    @patch("aegis.cli.read_assessment_observation")
+    def test_live_target_guard_accepts_review_only_target(self, probe):
+        probe.return_value = observation()
+        _require_live_target_reviewable("/dev/test0")
+
+    @patch("aegis.cli.read_assessment_observation")
+    def test_live_target_guard_blocks_mounted_target(self, probe):
+        probe.return_value = observation(mountpoints=["/"])
+        with self.assertRaises(PlanError):
+            _require_live_target_reviewable("/dev/test0")
+
+    @patch("aegis.cli.read_assessment_observation")
+    def test_live_target_guard_blocks_duplicate_identity_across_disks(self, probe):
+        first = observation()["devices"][0]
+        second = dict(first, path="/dev/test1")
+        probe.return_value = {"devices": [first, second]}
+        with self.assertRaises(PlanError):
+            _require_live_target_reviewable("/dev/test0")
+
+    @patch("aegis.cli.read_assessment_observation")
+    def test_live_target_guard_requires_unique_fresh_match(self, probe):
+        probe.return_value = observation()
+        with self.assertRaises(PlanError):
+            _require_live_target_reviewable("/dev/missing")
 
     def test_malformed_fixture_is_reported_as_blocked(self):
         code, output, _ = self.run_assess({"devices": "not-a-list"})
