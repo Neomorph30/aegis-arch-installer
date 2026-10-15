@@ -103,21 +103,41 @@ def verify_storage_plan_integrity(plan: dict[str, Any]) -> bool:
 
 
 def _partition_summary(children: Any) -> list[dict[str, Any]]:
-    result: list[dict[str, Any]] = []
+    """Validate child topology instead of silently dropping ambiguous observations."""
+    if children is None:
+        return []
     if not isinstance(children, list):
-        return result
+        raise PlanError("Inventory contains a malformed partition tree")
+    result: list[dict[str, Any]] = []
     for child in children:
         if not isinstance(child, dict):
-            continue
-        mounts = child.get("mountpoints") or []
-        if isinstance(mounts, str):
-            mounts = [mounts]
+            raise PlanError("Inventory contains a malformed partition entry")
+        path = child.get("path")
+        if path is not None and not _valid_device_path(path):
+            raise PlanError("Inventory contains an invalid partition device path")
+        raw_mounts = child.get("mountpoints", child.get("mountpoint"))
+        if raw_mounts is None or raw_mounts == "":
+            mounts: list[str] = []
+        elif isinstance(raw_mounts, str):
+            if not raw_mounts.strip():
+                raise PlanError("Inventory contains a whitespace-only partition mountpoint")
+            mounts = [raw_mounts]
+        elif isinstance(raw_mounts, list):
+            mounts = []
+            for mount in raw_mounts:
+                if mount is None or mount == "":
+                    continue
+                if not isinstance(mount, str) or not mount.strip():
+                    raise PlanError("Inventory contains malformed partition mountpoint data")
+                mounts.append(mount)
+        else:
+            raise PlanError("Inventory contains malformed partition mountpoint data")
         result.append({
-            "path": child.get("path"),
+            "path": path,
             "type": child.get("type"),
             "filesystem": child.get("fstype"),
             "size_bytes": child.get("size"),
-            "mountpoints": [m for m in mounts if isinstance(m, str) and m.strip()],
+            "mountpoints": mounts,
             "partuuid": child.get("partuuid"),
         })
         result.extend(_partition_summary(child.get("children", [])))
