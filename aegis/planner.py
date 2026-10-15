@@ -115,6 +115,8 @@ def _partition_summary(children: Any) -> list[dict[str, Any]]:
         path = child.get("path")
         if path is not None and not _valid_device_path(path):
             raise PlanError("Inventory contains an invalid partition device path")
+        if "mountpoints" not in child and "mountpoint" not in child:
+            raise PlanError("Inventory is missing partition mountpoint observations")
         raw_mounts = child.get("mountpoints", child.get("mountpoint"))
         if raw_mounts is None or raw_mounts == "":
             mounts: list[str] = []
@@ -154,9 +156,25 @@ def _observed_bool(disk: dict[str, Any], field: str) -> bool | None:
 
 
 def _disk_identity(disk: dict[str, Any]) -> dict[str, Any]:
-    mounts = disk.get("mountpoints") or []
-    if isinstance(mounts, str):
-        mounts = [mounts]
+    if "mountpoints" not in disk and "mountpoint" not in disk:
+        raise PlanError("Inventory is missing physical-disk mountpoint observations")
+    raw_mounts = disk.get("mountpoints", disk.get("mountpoint"))
+    if raw_mounts is None or raw_mounts == "":
+        mounts: list[str] = []
+    elif isinstance(raw_mounts, str):
+        if not raw_mounts.strip():
+            raise PlanError("Inventory contains a whitespace-only disk mountpoint")
+        mounts = [raw_mounts]
+    elif isinstance(raw_mounts, list):
+        mounts = []
+        for mount in raw_mounts:
+            if mount is None or mount == "":
+                continue
+            if not isinstance(mount, str) or not mount.strip():
+                raise PlanError("Inventory contains malformed disk mountpoint data")
+            mounts.append(mount)
+    else:
+        raise PlanError("Inventory contains malformed disk mountpoint data")
     return {
         "path": disk.get("path"),
         "model": str(disk.get("model") or "").strip(),
