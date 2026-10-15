@@ -89,7 +89,7 @@ class GuestInstallSpecTests(unittest.TestCase):
     def test_secondary_must_be_readonly_in_layer07(self):
         obs = observation()
         obs["devices"][1]["read_only"] = False
-        with self.assertRaisesRegex(InstallSpecError, "secondary lab disk"):
+        with self.assertRaisesRegex(InstallSpecError, "Secondary lab disk"):
             build_guest_install_spec(obs)
 
     def test_small_primary_rejected(self):
