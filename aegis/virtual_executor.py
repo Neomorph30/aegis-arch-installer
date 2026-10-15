@@ -137,7 +137,7 @@ def simulate_execution(
             "action": "Discard this journal and regenerate a plan if inventory changes",
         },
     }
-    encoded = json.dumps(record, sort_keys=True, indent=2, ensure_ascii=True) + "\\n"
+    encoded = json.dumps(record, sort_keys=True, indent=2, ensure_ascii=True) + "\n"
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
