@@ -51,7 +51,7 @@ Read-only hardware probes, storage proposals, Btrfs/ext4 layout proposals, TUI w
 **Exit:** scripted TUI flows and negative tests; no raw credentials handled by AEGIS; offline states are truthful.
 
 ### Layer 05 — Advanced storage planner and consent
-**State: PARTIAL; validated identities, inventory fingerprint and tamper-detection digest are merged. Digest verification is not authorization, and no storage write is enabled. Depends on Layers 03,04.**
+**State: PARTIAL; validated identities, inventory fingerprint, tamper-detection digest and fail-closed handling of unknown removable/hotplug/read-write state are merged. Digest verification is not authorization, and no storage write is enabled. Depends on Layers 03,04.**
 - Design EFI/system/data partitions with checked alignment, size/headroom, encryption, Btrfs subvolumes and mountpoints; preserve secondary drives by default.
 - Model manual partitioning, existing ESPs and existing data without automatically enabling risky dual-boot shrinking.
 - Generate immutable, schema-versioned plans; show before/after maps and per-device destructive warnings.
