@@ -286,16 +286,22 @@ def launch(
     smoke: bool = True,
     network_mode: str = "disabled",
     observe_boot: bool = False,
+    observe_live: bool = False,
+    live_timeout_seconds: int = 120,
     popen: Callable[..., subprocess.Popen] = subprocess.Popen,
 ) -> dict[str, object]:
     """Launch the disposable VM; always clean up state and processes."""
     config.validate()
     if network_mode not in NETWORK_MODES:
         raise LabError("Unsupported network mode; choose disabled or explicit user-mode NAT")
-    if observe_boot and iso is None:
+    if (observe_boot or observe_live) and iso is None:
         raise LabError("Boot observation requires a verified Arch ISO")
-    if observe_boot and shutil.which("tesseract") is None:
+    if (observe_boot or observe_live) and shutil.which("tesseract") is None:
         raise LabError("Boot observation requires Tesseract OCR; no boot claim will be made")
+    if isinstance(live_timeout_seconds, bool) or not isinstance(live_timeout_seconds, int) or not 30 <= live_timeout_seconds <= 240:
+        raise LabError("Live boot timeout must be an integer from 30 to 240 seconds")
+    if observe_boot and observe_live:
+        raise LabError("Choose boot-menu observation or live-environment observation, not both")
     if os.name != "posix" or os.geteuid() == 0:
         raise LabError("Run lab as a non-root Linux user")
     available = dependencies()
@@ -308,7 +314,8 @@ def launch(
         folder = Path(work)
         paths = prepare_workspace(folder, config, firmware, iso, iso_sha256=iso_sha256)
         tpm_args, vm_args = command_lines(config, firmware, paths, interactive=not smoke,
-                                           network_mode=network_mode, observe_boot=observe_boot)
+                                           network_mode=network_mode,
+                                           observe_boot=(observe_boot or observe_live))
         tpm_proc = None
         vm_proc = None
         try:
@@ -350,6 +357,40 @@ def launch(
                         evidence["guest_boot_verified"] = boot_menu_detected
                         if not boot_menu_detected:
                             raise LabError("Verified ISO attached, but expected Arch UEFI boot-menu text was not detected")
+                    elif observe_live:
+                        # The live ISO may take over a minute to initialize under software emulation.
+                        screenshot = folder / "live-screen.png"
+                        deadline = time.monotonic() + live_timeout_seconds
+                        attempts = 0
+                        live_detected = False
+                        while time.monotonic() < deadline:
+                            attempts += 1
+                            query_qmp(paths["qmp_sock"], screenshot)
+                            try:
+                                ocr = subprocess.run(
+                                    ["tesseract", str(screenshot), "stdout", "--psm", "6"],
+                                    check=True, capture_output=True, text=True, timeout=10,
+                                ).stdout
+                            except (OSError, subprocess.SubprocessError) as exc:
+                                raise LabError("Live-environment screenshot OCR failed; boot remains unverified") from exc
+                            normalized_ocr = " ".join(ocr.casefold().split())
+                            if "archiso" in normalized_ocr and "root" in normalized_ocr:
+                                live_detected = True
+                                break
+                            if vm_proc.poll() is not None:
+                                raise LabError("QEMU exited before the Arch live environment was detected")
+                            time.sleep(3.0)
+                        if not live_detected:
+                            raise LabError("Arch live-environment prompt was not detected before timeout; boot remains unverified")
+                        evidence = {
+                            "qmp_running": True,
+                            "qmp_tpm_detected": True,
+                            "screenshot_captured": True,
+                            "live_environment_detected": True,
+                            "live_environment_marker": "archiso-and-root-prompt",
+                            "boot_ocr_attempts": attempts,
+                            "guest_boot_verified": True,
+                        }
                     else:
                         evidence = query_qmp(paths["qmp_sock"])
                     deadline = time.monotonic() + config.seconds
@@ -359,9 +400,10 @@ def launch(
                         time.sleep(min(.1, max(.001, deadline - time.monotonic())))
                     if vm_proc.poll() is not None:
                         raise LabError("QEMU exited during launch smoke interval")
-                    return {"status": "BOOT_MENU_DETECTED" if observe_boot else "LAUNCH_SMOKE_PASSED",
+                    return {"status": ("LIVE_ENVIRONMENT_DETECTED" if observe_live else ("BOOT_MENU_DETECTED" if observe_boot else "LAUNCH_SMOKE_PASSED")),
                             "seconds": config.seconds,
-                            "guest_boot_verified": bool(observe_boot and evidence.get("arch_boot_menu_detected")),
+                            "live_timeout_seconds": live_timeout_seconds if observe_live else None,
+                            "guest_boot_verified": bool((observe_boot and evidence.get("arch_boot_menu_detected")) or (observe_live and evidence.get("live_environment_detected"))),
                             "installation_performed": False,
                             "network_mode": network_mode,
                             "guest_network_enabled": network_mode == "user-nat-explicit",
@@ -401,6 +443,10 @@ def main(argv: list[str] | None = None) -> int:
     group.add_argument("--run", action="store_true", help="start interactive VM; Ctrl+C cleans up disposable state")
     parser.add_argument("--observe-boot", action="store_true",
                         help="capture loopback-only VNC screenshot and verify Arch UEFI boot-menu text with OCR")
+    parser.add_argument("--observe-live", action="store_true",
+                        help="wait for an Arch live-environment root prompt using screenshot OCR (requires verified ISO)")
+    parser.add_argument("--live-timeout-seconds", type=int, default=120,
+                        help="live environment observation timeout (30–240 seconds)")
     parser.add_argument("--iso", type=Path, help="optional local Arch ISO to verify and copy into private lab")
     parser.add_argument("--iso-sha256", help="expected SHA-256 from an independently trusted Arch download/checksum source")
     parser.add_argument("--network-mode", choices=sorted(NETWORK_MODES), default="disabled",
@@ -410,8 +456,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ram-mib", type=int, default=2048)
     parser.add_argument("--cpus", type=int, default=2)
     args = parser.parse_args(argv)
-    if args.observe_boot and not args.smoke:
-        print("AEGIS lab refused: --observe-boot must be paired with --smoke.", file=sys.stderr)
+    if (args.observe_boot or args.observe_live) and not args.smoke:
+        print("AEGIS lab refused: boot observation must be paired with --smoke.", file=sys.stderr)
+        return 2
+    if args.observe_boot and args.observe_live:
+        print("AEGIS lab refused: choose only one boot observation mode.", file=sys.stderr)
         return 2
     if args.check:
         print(json.dumps(dependencies(), indent=2, sort_keys=True))
@@ -425,7 +474,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = launch(LabConfig(ram_mib=args.ram_mib, cpus=args.cpus, seconds=args.seconds),
                         args.iso, iso_sha256=args.iso_sha256, smoke=args.smoke,
-                        network_mode=args.network_mode, observe_boot=args.observe_boot)
+                        network_mode=args.network_mode, observe_boot=args.observe_boot,
+                        observe_live=args.observe_live, live_timeout_seconds=args.live_timeout_seconds)
     except (LabError, OSError) as exc:
         print(f"AEGIS lab refused/failed: {exc}", file=sys.stderr)
         return 2
@@ -433,7 +483,7 @@ def main(argv: list[str] | None = None) -> int:
         print("AEGIS lab interrupted; disposable workspace cleaned up.", file=sys.stderr)
         return 130
     print(json.dumps(result, indent=2, sort_keys=True))
-    return 0 if args.smoke or args.observe_boot or result.get("exit_code") == 0 else 1
+    return 0 if args.smoke or args.observe_boot or args.observe_live or result.get("exit_code") == 0 else 1
 
 
 if __name__ == "__main__":
