@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 import hashlib
 import json
+import re
 
 MIB = 1024 ** 2
 GIB = 1024 ** 3
@@ -29,6 +30,18 @@ class PlanError(ValueError):
     pass
 
 
+_DEVICE_PATH = re.compile(r"^/dev/[A-Za-z0-9_.!:+-]+(?:/[A-Za-z0-9_.!:+-]+)*$")
+
+
+def _valid_device_path(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and _DEVICE_PATH.fullmatch(value) is not None
+        and all(part not in {".", ".."} for part in value.split("/"))
+        and not any(ord(char) < 32 or ord(char) == 127 for char in value)
+    )
+
+
 def _validated_disks(inventory: dict[str, Any]) -> list[dict[str, Any]]:
     raw = inventory.get("disks")
     if not isinstance(raw, list) or not raw:
@@ -40,14 +53,15 @@ def _validated_disks(inventory: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(disk, dict):
             raise PlanError(f"Inventory disk entry {index} is malformed")
         path = disk.get("path")
-        if not isinstance(path, str) or not path.startswith("/dev/") or ".." in path or path in paths:
+        if not _valid_device_path(path) or path in paths:
             raise PlanError("Inventory has an invalid or duplicate device path")
         paths.add(path)
         # Treat serial and WWN as separate namespaces, but reject collisions within each.
         for field in ("serial", "wwn"):
             value = disk.get(field)
             if value is not None and value != "":
-                if not isinstance(value, str) or not value.strip():
+                if (not isinstance(value, str) or not value.strip()
+                        or any(ord(char) < 32 or ord(char) == 127 for char in value)):
                     raise PlanError(f"Inventory contains an invalid {field}")
                 key = f"{field}:{value.strip()}"
                 if key in identifiers:
@@ -58,8 +72,8 @@ def _validated_disks(inventory: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _find_disk(inventory: dict[str, Any], path: str) -> dict[str, Any]:
-    if not isinstance(path, str) or not path.startswith("/dev/") or ".." in path:
-        raise PlanError("Disk must have a /dev/ device path")
+    if not _valid_device_path(path):
+        raise PlanError("Disk must have a valid /dev/ device path")
     disks = _validated_disks(inventory)
     matches = [d for d in disks if d.get("path") == path and d.get("type", "disk") == "disk"]
     if len(matches) != 1:
