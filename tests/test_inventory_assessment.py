@@ -130,6 +130,13 @@ class InventoryAssessmentTests(unittest.TestCase):
         self.assertEqual(result["status"], "blocked")
         self.assertTrue(any(f["code"] == "TREE_LIMIT" for f in result["findings"]))
 
+    def test_oversized_top_level_inventory_is_not_silently_truncated(self):
+        values = [disk(path=f"/dev/test{index}", serial=f"SERIAL-{index}",
+                       wwn=f"WWN-{index}") for index in range(4097)]
+        result = assess_inventory({"devices": values})
+        self.assertEqual(result["status"], "blocked")
+        self.assertTrue(any(f["code"] == "TREE_LIMIT" for f in result["findings"]))
+
     def test_malformed_child_collection_blocks_whole_result(self):
         result = assess(disk(children={"unexpected": "mapping"}))
         self.assertEqual(result["status"], "blocked")
