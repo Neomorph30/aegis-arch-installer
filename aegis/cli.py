@@ -92,8 +92,8 @@ def _choose(prompt: str, max_index: int, *, attempts: int = 3) -> int | None:
     return None
 
 
-def _require_live_target_reviewable(target: str) -> None:
-    """Block live proposals when the selected disk or any descendant is unsafe."""
+def _require_live_target_reviewable(target: str, expected: dict[str, Any] | None = None) -> None:
+    """Block live proposals if a fresh target snapshot is unsafe or identity changed."""
     observation = read_assessment_observation()
     whole = assess_inventory(observation)
     if any(item.get("code") == "DUPLICATE_IDENTITY" for item in whole.get("findings", [])):
@@ -102,6 +102,18 @@ def _require_live_target_reviewable(target: str) -> None:
                if isinstance(node, dict) and node.get("path") == target]
     if len(matches) != 1:
         raise PlanError("Selected live disk is not uniquely present in fresh hardware observations")
+    fresh = matches[0]
+    if expected is not None:
+        for field in ("serial", "wwn", "size"):
+            old_value = expected.get(field)
+            new_value = fresh.get(field)
+            if old_value != new_value:
+                raise PlanError(
+                    f"Selected disk {field} changed between inventory and safety assessment; refresh and retry"
+                )
+        if not any(isinstance(fresh.get(field), str) and fresh[field].strip()
+                   for field in ("serial", "wwn")):
+            raise PlanError("Selected live disk has no stable identity in the fresh safety assessment")
     result = assess_inventory({"devices": matches})
     if result.get("status") == "blocked":
         codes = sorted({item.get("code", "UNKNOWN") for item in result.get("findings", [])
@@ -153,9 +165,13 @@ def wizard(inventory_file: str | None = None) -> int:
     filesystem = "btrfs" if fs_index is None or fs_index == 0 else "ext4"
     try:
         if inventory_file is None:
-            _require_live_target_reviewable(primary)
+            _require_live_target_reviewable(
+                primary, next((disk for disk in data.get("disks", [])
+                               if isinstance(disk, dict) and disk.get("path") == primary), None))
             if secondary is not None:
-                _require_live_target_reviewable(secondary)
+                _require_live_target_reviewable(
+                    secondary, next((disk for disk in data.get("disks", [])
+                                     if isinstance(disk, dict) and disk.get("path") == secondary), None))
         plan = build_storage_plan(data, primary, secondary, secondary_action, filesystem=filesystem)
     except (PlanError, KeyError, TypeError, ValueError) as exc:
         print(f"Cannot create a safe proposal: {exc}", file=sys.stderr)
@@ -300,9 +316,13 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "plan":
             inventory = _inventory(args.inventory)
             if args.inventory is None:
-                _require_live_target_reviewable(args.primary)
+                _require_live_target_reviewable(
+                    args.primary, next((disk for disk in inventory.get("disks", [])
+                                        if isinstance(disk, dict) and disk.get("path") == args.primary), None))
                 if args.secondary is not None:
-                    _require_live_target_reviewable(args.secondary)
+                    _require_live_target_reviewable(
+                        args.secondary, next((disk for disk in inventory.get("disks", [])
+                                              if isinstance(disk, dict) and disk.get("path") == args.secondary), None))
             plan = build_storage_plan(inventory, args.primary, args.secondary,
                                       args.secondary_action, filesystem=args.filesystem)
             if args.output:
