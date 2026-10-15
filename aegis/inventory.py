@@ -17,7 +17,14 @@ def assess_inventory(observation: dict[str, Any]) -> dict[str, Any]:
         return {"schema_version": SCHEMA_VERSION, "status": "blocked",
                 "devices": [], "findings": [{"code": "INVALID_INVENTORY",
                 "severity": "error", "message": "Expected an object with a devices list.",
-                "next_action": "Re-run read-only discovery; do not plan writes."}]}
+                "next_action": "Re-run read-only discovery; do not plan writes."}],
+                "write_authorized": False}
+    if not observation["devices"]:
+        return {"schema_version": SCHEMA_VERSION, "status": "blocked",
+                "devices": [], "findings": [{"code": "EMPTY_INVENTORY",
+                "severity": "error", "message": "No devices were discovered.",
+                "next_action": "Check discovery tools and permissions; do not plan writes."}],
+                "write_authorized": False}
     seen_paths: set[str] = set()
     seen_ids: dict[str, str] = {}
     count = 0
@@ -50,10 +57,8 @@ def assess_inventory(observation: dict[str, Any]) -> dict[str, Any]:
             reasons.append("mounted")
         if node.get("active_swap"):
             reasons.append("active_swap")
-        if node.get("holders") or node.get("children"):
-            # Child partitions alone are normal; nested mapper/RAID holders are not.
-            if node.get("holders") or kind in {"crypt", "lvm", "raid", "md"}:
-                reasons.append("has_holders")
+        if node.get("holders") or kind in {"crypt", "lvm", "raid", "md"}:
+            reasons.append("has_holders")
         if node.get("ambiguous"):
             reasons.append("ambiguous_identity")
         for reason in reasons:
