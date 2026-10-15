@@ -43,6 +43,17 @@ class LabISOIntegrationTests(unittest.TestCase):
         self.assertTrue(prepared["iso"].is_file())
         verify.assert_called_once_with(prepared["iso"], digest)
 
+    def test_verified_iso_is_first_boot_device(self):
+        with patch("lab.runtime.verify_arch_iso", return_value={"verified": True}):
+            prepared = prepare_workspace(self.workspace, LabConfig(), self.firmware,
+                                         self.iso, iso_sha256="c" * 64)
+        _, qemu = __import__("lab.runtime", fromlist=["command_lines"]).command_lines(
+            LabConfig(), self.firmware, prepared
+        )
+        boot_index = qemu.index("-boot")
+        self.assertEqual(qemu[boot_index + 1], "order=d")
+        self.assertIn("readonly=on", qemu[qemu.index("-drive", boot_index):][1])
+
     def test_integrity_failure_prevents_prepared_iso_from_being_returned(self):
         from lab.iso_validation import ISOValidationError
         with patch("lab.runtime.verify_arch_iso", side_effect=ISOValidationError("digest mismatch")):
