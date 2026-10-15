@@ -72,6 +72,8 @@ python -m lab.runtime --run --iso /path/to/archlinux-x86_64.iso --iso-sha256 <tr
 
 Use the exact ISO checksum from the official Arch release page and verify the release signature where possible. User-mode NAT allows outbound guest traffic through QEMU's userspace network stack; AEGIS adds no host port-forwarding rules and does not enable bridged networking. This is an opt-in transport setting, not a network allowlist: the guest may reach destinations permitted by QEMU user networking and the host's network policy. Keep credentials and sensitive data out of the lab, and return to the default `disabled` mode when networking is not needed.
 
+The guest read-only probe classifies networking as `user-nat-explicit` only when it sees one non-loopback interface with QEMU's conventional user-NAT IPv4 address (`10.0.2.15/24`) and default gateway (`10.0.2.2`). Other interface or route states remain `unverified` and block the install spec. This is a conservative consistency check, not cryptographic proof of the host's network mode.
+
 ## Verified ISO boot-menu observation
 
 For CI and development, the bounded smoke runner also supports a stronger, opt-in observation mode:
