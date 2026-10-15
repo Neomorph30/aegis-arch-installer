@@ -87,6 +87,17 @@ class TransactionJournalTests(unittest.TestCase):
                             note_code="state_ambiguous")
         self.assertEqual(self.journal.read()[-1]["event_type"], "recovery_decision")
 
+    def test_malformed_hash_type_is_rejected_as_journal_error(self):
+        self.journal.append("phase_intent", phase="preflight", status="STARTED")
+        event = self.journal.read()[0]
+        event["event_hash"] = 123
+        with self.assertRaisesRegex(JournalError, "event hash is malformed"):
+            parse_journal((json.dumps(event) + "\\n").encode())
+
+    def test_oversized_journal_is_rejected(self):
+        with self.assertRaisesRegex(JournalError, "exceeds the supported evidence size"):
+            parse_journal(b"x" * (1024 * 1024 + 1))
+
     def test_symlink_journal_is_rejected(self):
         target = Path(self.temp.name) / "target"
         target.write_text("")
