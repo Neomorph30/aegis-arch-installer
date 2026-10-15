@@ -7,10 +7,10 @@ from aegis.reporting import html_report, public_view
 def inventory():
     return {"disks": [
         {"path": "/dev/nvme0n1", "size": 1000 * 10**9, "type": "disk", "serial": "PRIMARY-001",
-         "model": "Example NVMe", "tran": "nvme", "rm": False, "ro": False,
+         "model": "Example NVMe", "tran": "nvme", "rm": False, "ro": False, "hotplug": False, "mountpoints": [None],
          "children": [{"path": "/dev/nvme0n1p1", "fstype": "vfat", "mountpoints": []}]},
         {"path": "/dev/sdb", "size": 2000 * 10**9, "type": "disk", "serial": "SECONDARY-002",
-         "model": "Example SATA", "tran": "sata", "rm": False, "ro": False,
+         "model": "Example SATA", "tran": "sata", "rm": False, "ro": False, "hotplug": False, "mountpoints": [None],
          "children": [{"path": "/dev/sdb1", "fstype": "crypto_LUKS", "mountpoints": []}]},
     ]}
 
@@ -62,6 +62,27 @@ class PlannerTests(unittest.TestCase):
         self.assertIn("&lt;script&gt;", output)
         self.assertEqual(public_view({"password": "pw"})["password"], "[REDACTED]")
 
+
+    def test_missing_readonly_state_blocks_destructive_proposal(self):
+        data = inventory()
+        data["disks"][0].pop("ro")
+        plan = build_storage_plan(data, "/dev/nvme0n1")
+        self.assertEqual(plan["review_state"], "BLOCKED")
+        self.assertTrue(any("read/write state could not be verified" in item for item in plan["blockers"]))
+
+    def test_missing_removable_state_blocks_destructive_proposal(self):
+        data = inventory()
+        data["disks"][0].pop("rm")
+        plan = build_storage_plan(data, "/dev/nvme0n1")
+        self.assertEqual(plan["review_state"], "BLOCKED")
+        self.assertTrue(any("removable state could not be verified" in item for item in plan["blockers"]))
+
+    def test_missing_hotplug_state_blocks_destructive_proposal(self):
+        data = inventory()
+        data["disks"][0].pop("hotplug")
+        plan = build_storage_plan(data, "/dev/nvme0n1")
+        self.assertEqual(plan["review_state"], "BLOCKED")
+        self.assertTrue(any("hotplug state could not be verified" in item for item in plan["blockers"]))
 
     def test_plan_digest_detects_tampering(self):
         plan = build_storage_plan(inventory(), "/dev/nvme0n1")
