@@ -92,6 +92,23 @@ def _choose(prompt: str, max_index: int, *, attempts: int = 3) -> int | None:
     return None
 
 
+def _require_live_target_reviewable(target: str) -> None:
+    """Block live proposals when the selected disk or any descendant is unsafe."""
+    observation = read_assessment_observation()
+    whole = assess_inventory(observation)
+    if any(item.get("code") == "DUPLICATE_IDENTITY" for item in whole.get("findings", [])):
+        raise PlanError("Live inventory has duplicate stable device identities; resolve ambiguity before planning")
+    matches = [node for node in observation.get("devices", [])
+               if isinstance(node, dict) and node.get("path") == target]
+    if len(matches) != 1:
+        raise PlanError("Selected live disk is not uniquely present in fresh hardware observations")
+    result = assess_inventory({"devices": matches})
+    if result.get("status") == "blocked":
+        codes = sorted({item.get("code", "UNKNOWN") for item in result.get("findings", [])
+                        if item.get("severity") == "error"})
+        raise PlanError("Live storage assessment blocked this disk: " + ", ".join(codes))
+
+
 def wizard(inventory_file: str | None = None) -> int:
     try:
         data = _inventory(inventory_file)
@@ -135,6 +152,10 @@ def wizard(inventory_file: str | None = None) -> int:
     fs_index = _choose("Root filesystem: 1) Btrfs [default], 2) ext4: ", 2)
     filesystem = "btrfs" if fs_index is None or fs_index == 0 else "ext4"
     try:
+        if inventory_file is None:
+            _require_live_target_reviewable(primary)
+            if secondary is not None:
+                _require_live_target_reviewable(secondary)
         plan = build_storage_plan(data, primary, secondary, secondary_action, filesystem=filesystem)
     except (PlanError, KeyError, TypeError, ValueError) as exc:
         print(f"Cannot create a safe proposal: {exc}", file=sys.stderr)
@@ -277,7 +298,12 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Secure Boot: {data.get('secure_boot_state', 'unverified')}")
                 _print_devices(data.get("disks", []))
         elif args.command == "plan":
-            plan = build_storage_plan(_inventory(args.inventory), args.primary, args.secondary,
+            inventory = _inventory(args.inventory)
+            if args.inventory is None:
+                _require_live_target_reviewable(args.primary)
+                if args.secondary is not None:
+                    _require_live_target_reviewable(args.secondary)
+            plan = build_storage_plan(inventory, args.primary, args.secondary,
                                       args.secondary_action, filesystem=args.filesystem)
             if args.output:
                 _write_json(args.output, plan)
