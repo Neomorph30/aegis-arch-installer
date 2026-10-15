@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import io
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -70,7 +71,7 @@ class ArchISOValidationTests(unittest.TestCase):
         }), contextlib.redirect_stdout(io.StringIO()) as stdout:
             code = main(["--iso", "arch.iso", "--sha256", "a" * 64])
         self.assertEqual(code, 0)
-        result = __import__("json").loads(stdout.getvalue())
+        result = json.loads(stdout.getvalue())
         self.assertEqual(result["status"], "VERIFIED_ARCH_ISO")
         self.assertFalse(result["execution_enabled"])
 
