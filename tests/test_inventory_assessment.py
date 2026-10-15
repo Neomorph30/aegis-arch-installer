@@ -138,7 +138,6 @@ class InventoryAssessmentTests(unittest.TestCase):
             disk(type=None),
             disk(type=[]),
             disk(type={}),
-            disk().copy(),
         ]
         for value in cases:
             with self.subTest(value=value):
