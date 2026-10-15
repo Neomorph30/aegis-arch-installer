@@ -19,10 +19,11 @@ class ResilientWizardTests(unittest.TestCase):
             self.assertIsNone(_choose('choice: ', 0))
 
     def test_missing_inventory_returns_recoverable_error(self):
-        with patch('sys.stderr', new_callable=io.StringIO) as err:
+        with patch('sys.stderr', new_callable=io.StringIO) as err, patch('sys.stdout', new_callable=io.StringIO) as out:
             result = wizard('/path/that/does/not/exist/aegis-fixture.json')
         self.assertEqual(result, 2)
-        self.assertIn('Recovery:', err.getvalue())
+        self.assertIn('Recovery:', out.getvalue())
+        self.assertIn('unavailable', err.getvalue().lower())
 
 if __name__ == '__main__':
     unittest.main()
