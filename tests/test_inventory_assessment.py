@@ -126,6 +126,8 @@ class InventoryAssessmentTests(unittest.TestCase):
             disk(ambiguous="no"),
             disk(children="not-a-list"),
             disk(type=None),
+            disk(type=[]),
+            disk(type={}),
         ]
         for value in cases:
             with self.subTest(value=value):
