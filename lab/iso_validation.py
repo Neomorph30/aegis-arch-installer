@@ -30,17 +30,7 @@ def verify_arch_iso(
     if isinstance(min_size, bool) or not isinstance(min_size, int) or min_size < 1:
         raise ISOValidationError("Minimum ISO size is invalid")
     source = Path(path)
-    try:
-        fd = source.open("rb")
-    except OSError as exc:
-        raise ISOValidationError("Cannot open ISO; re-check the local path and permissions") from exc
-    try:
-        import os
-        import fcntl
-        os.close(fd.fileno())
-    except (OSError, ImportError):
-        pass
-    # Re-open with no-follow semantics to reject a symlink substituted between checks.
+    # Open once with no-follow semantics; all checks use the same file descriptor.
     import os
     try:
         raw_fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
