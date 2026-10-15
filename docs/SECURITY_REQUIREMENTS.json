@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "project": "AEGIS",
+  "scope": "x86_64 UEFI Arch Linux installer — preview is non-destructive",
+  "status": "DESIGN_BASELINE_NOT_PRODUCTION_CERTIFICATION",
+  "requirements": [
+    {"id": "AEGIS-SEC-001", "area": "storage", "requirement": "Reidentify each selected device and prohibit writes to live or ambiguous targets", "evidence_required": "Host-exclusion VM tests, identity swap and active mount fault injection", "gate": "before_physical_install", "implementation": "NOT_IMPLEMENTED"},
+    {"id": "AEGIS-SEC-002", "area": "consent", "requirement": "Require one-use authorization for each destructive target using displayed stable identities", "evidence_required": "Consent bypass tests and reviewed execution-manifest log", "gate": "before_physical_install", "implementation": "NOT_IMPLEMENTED"},
+    {"id": "AEGIS-SEC-003", "area": "isolation", "requirement": "Separate pure planning and privileged execution across explicit allowlisted structured operations", "evidence_required": "Executor interface review, exploit tests, operation allowlist", "gate": "before_virtual_executor", "implementation": "NOT_IMPLEMENTED"},
+    {"id": "AEGIS-SEC-004", "area": "encryption", "requirement": "Use LUKS2 and separate per-volume offline recovery credentials without logging secrets", "evidence_required": "Recovery drills, masked logs, crash tests", "gate": "before_physical_install", "implementation": "NOT_IMPLEMENTED"},
+    {"id": "AEGIS-SEC-005", "area": "trusted-boot", "requirement": "Use signed boot assets and verified TPM2 PIN policy where supported, with independent recovery", "evidence_required": "Signed UKI tamper, kernel update, PCR mismatch and TPM-loss tests", "gate": "before_physical_install", "implementation": "NOT_IMPLEMENTED"},
+    {"id": "AEGIS-SEC-006", "area": "network", "requirement": "Delegate Wi-Fi credential entry to trusted tools and require explicit opt-in before live changes", "evidence_required": "Mocked subprocess and consent tests; real hardware qualifications", "gate": "pre_alpha", "implementation": "PREVIEW_IMPLEMENTED_UNQUALIFIED"},
+    {"id": "AEGIS-SEC-007", "area": "supply-chain", "requirement": "Require verified source provenance, pinned CI actions, signed distribution and vetted package dependencies", "evidence_required": "CI configuration checks, reproducibility and signature verification", "gate": "before_public_release", "implementation": "PARTIAL"},
+    {"id": "AEGIS-SEC-008", "area": "audit", "requirement": "Make every security claim evidence-backed with FAILED, UNVERIFIED and SKIPPED support", "evidence_required": "Structured report tests proving no unexecuted control is labelled PASSED", "gate": "before_public_release", "implementation": "PARTIAL"},
+    {"id": "AEGIS-SEC-009", "area": "firewall", "requirement": "Preserve active remote administration through scoped firewall changes and watchdog rollback", "evidence_required": "Remote lockout simulation, IPv6/DHCP/DNS/VR traffic tests", "gate": "before_public_release", "implementation": "NOT_IMPLEMENTED"},
+    {"id": "AEGIS-SEC-010", "area": "optimization", "requirement": "Apply only supported, reversible tuning without reducing mandatory protections", "evidence_required": "Benchmark and regression comparisons, rollback verification", "gate": "before_public_release", "implementation": "NOT_IMPLEMENTED"},
+    {"id": "AEGIS-SEC-011", "area": "credentials", "requirement": "Never write TPM PIN, LUKS secret, signing private key or live credential into ordinary logs or reports", "evidence_required": "Seeded secrets and reporting/redaction tests", "gate": "pre_alpha", "implementation": "PARTIAL"},
+    {"id": "AEGIS-SEC-012", "area": "readiness", "requirement": "Reject a production-ready claim until independent review, real recovery and supported hardware qualification pass", "evidence_required": "Human signoff and linked immutable test artifacts", "gate": "before_public_release", "implementation": "NOT_IMPLEMENTED"}
+  ]
+}
