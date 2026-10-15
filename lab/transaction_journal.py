@@ -84,23 +84,25 @@ def _validate_event(event: dict[str, Any], sequence: int, previous_hash: str) ->
         raise JournalError("Journal timestamp is malformed") from exc
     if not isinstance(event.get("event_hash"), str) or not HASH_PATTERN.fullmatch(event["event_hash"]):
         raise JournalError("Journal event hash is malformed")
-    if event.get("event_type") not in EVENT_TYPES:
+    if not isinstance(event.get("event_type"), str) or event["event_type"] not in EVENT_TYPES:
         raise JournalError("Journal event type is not allowlisted")
-    if event.get("note_code") not in NOTE_CODES:
+    if not isinstance(event.get("note_code"), str) or event["note_code"] not in NOTE_CODES:
         raise JournalError("Journal note code is not allowlisted")
     exit_code = event.get("exit_code")
     if exit_code is not None and (isinstance(exit_code, bool) or not isinstance(exit_code, int) or not 0 <= exit_code <= 255):
         raise JournalError("Journal exit code is malformed")
     kind, phase, status = event["event_type"], event["phase"], event["status"]
     if kind in ("phase_intent", "phase_result"):
-        if phase not in PHASES:
+        if not isinstance(phase, str) or phase not in PHASES:
             raise JournalError("Journal phase is not allowlisted")
+        if not isinstance(status, str):
+            raise JournalError("Journal phase status is malformed")
         if kind == "phase_intent" and status != "STARTED":
             raise JournalError("Phase intent must use STARTED status")
         if kind == "phase_result" and status not in {"SUCCEEDED", "FAILED", "UNCERTAIN"}:
             raise JournalError("Phase result status is invalid")
     else:
-        if phase is not None or status not in RECOVERY_STATUSES:
+        if phase is not None or not isinstance(status, str) or status not in RECOVERY_STATUSES:
             raise JournalError("Recovery decision is malformed")
     if not hmac.compare_digest(event["event_hash"], _event_hash(event)):
         raise JournalError("Journal record hash mismatch; preserve evidence")
@@ -194,7 +196,8 @@ class TransactionJournal:
         exit_code: int | None = None,
     ) -> dict[str, Any]:
         self._check_parent()
-        if event_type not in EVENT_TYPES or note_code not in NOTE_CODES:
+        if (not isinstance(event_type, str) or event_type not in EVENT_TYPES
+                or not isinstance(note_code, str) or note_code not in NOTE_CODES):
             raise JournalError("Event type or note code is not allowlisted")
         if exit_code is not None and (isinstance(exit_code, bool) or not isinstance(exit_code, int) or not 0 <= exit_code <= 255):
             raise JournalError("Exit code is invalid")
