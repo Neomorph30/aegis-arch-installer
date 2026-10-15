@@ -10,7 +10,7 @@ import sys
 from typing import Any
 
 from .assurance import formatted_manifest
-from .hardware import HardwareInspectionError, inspect
+from .hardware import HardwareInspectionError, inspect, read_assessment_observation
 from .inventory import assess_inventory
 from .network import NetworkSetupError, interactive_preflight, network_preflight, print_network_status, launch_wifi_setup
 from .planner import PlanError, build_storage_plan
@@ -227,9 +227,12 @@ def main(argv: list[str] | None = None) -> int:
     p_inspect = sub.add_parser("inspect", help="Read-only hardware inventory")
     p_inspect.add_argument("--json", action="store_true")
     p_inspect.add_argument("--inventory", help="Load fixture JSON rather than inspect live hardware")
-    p_assess = sub.add_parser("assess", help="Assess a structured block-device observation fixture; read-only")
-    p_assess.add_argument("--inventory", required=True,
-                          help="JSON fixture with a devices list; no hardware probing or disk writes")
+    p_assess = sub.add_parser("assess", help="Assess block-device observations; read-only")
+    assess_source = p_assess.add_mutually_exclusive_group(required=True)
+    assess_source.add_argument("--inventory",
+                               help="JSON fixture with a devices list; no hardware probing or disk writes")
+    assess_source.add_argument("--live", action="store_true",
+                               help="Collect live read-only block-device, holder and swap observations")
     p_plan = sub.add_parser("plan", help="Read-only storage partition proposal")
     p_plan.add_argument("--primary", required=True)
     p_plan.add_argument("--secondary")
@@ -260,7 +263,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             return menu(getattr(args, "inventory", None))
         if args.command == "assess":
-            observation = _load_json(args.inventory)
+            observation = read_assessment_observation() if args.live else _load_json(args.inventory)
             result = assess_inventory(observation)
             print(json.dumps(result, indent=2, ensure_ascii=False))
             return 2 if result["status"] == "blocked" else 0
