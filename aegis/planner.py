@@ -223,9 +223,9 @@ def build_storage_plan(
     """Create a human-reviewable plan. It cannot be executed by this package."""
     if not isinstance(inventory, dict):
         raise PlanError("Hardware inventory must be an object")
-    if secondary_action not in SECONDARY_ACTIONS:
+    if not isinstance(secondary_action, str) or secondary_action not in SECONDARY_ACTIONS:
         raise PlanError(f"secondary_action must be one of {sorted(SECONDARY_ACTIONS)}")
-    if filesystem not in FILESYSTEMS:
+    if not isinstance(filesystem, str) or filesystem not in FILESYSTEMS:
         raise PlanError(f"filesystem must be one of {sorted(FILESYSTEMS)}")
     if secondary is None and secondary_action != "preserve":
         raise PlanError("Select a secondary disk to propose unlock or erase")
