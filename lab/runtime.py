@@ -172,6 +172,7 @@ def command_lines(
     *,
     interactive: bool = False,
     network_mode: str = "disabled",
+    observe_boot: bool = False,
 ) -> tuple[list[str], list[str]]:
     """Construct hard-coded QEMU options; no user-supplied QEMU options."""
     config.validate()
@@ -193,7 +194,8 @@ def command_lines(
            "--ctrl", f"type=unixio,path={prepared['tpm_sock']}", "--flags", "startup-clear"]
     qemu = [QEMU, "-no-user-config", "-nodefaults", "-machine", "q35,accel=tcg",
             "-cpu", "max", "-m", str(config.ram_mib), "-smp", str(config.cpus),
-            "-display", "gtk" if interactive else "none", "-monitor", "none", "-serial", "none",
+            "-display", "vnc=127.0.0.1:0" if observe_boot else ("gtk" if interactive else "none"),
+            "-monitor", "none", "-serial", "none",
             "-nic", "none" if network_mode == "disabled" else "user,model=virtio-net-pci",
             "-device", "VGA",
             "-qmp", f"unix:{prepared['qmp_sock']},server=on,wait=off",
@@ -217,8 +219,8 @@ def command_lines(
     return tpm, qemu
 
 
-def query_qmp(path: Path) -> dict[str, object]:
-    """Ask QEMU whether the machine is running and a software TPM is attached."""
+def query_qmp(path: Path, screenshot_path: Path | None = None) -> dict[str, object]:
+    """Ask QEMU whether it is running and optionally capture a guest display screenshot."""
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
         client.settimeout(3.0)
         client.connect(str(path))
@@ -238,8 +240,11 @@ def query_qmp(path: Path) -> dict[str, object]:
             hello = receive()
             if "QMP" not in hello:
                 raise LabError("QMP greeting missing")
-            def cmd(command: str) -> object:
-                stream.write(json.dumps({"execute": command}).encode() + b"\n")
+            def cmd(command: str, arguments: dict[str, object] | None = None) -> object:
+                request: dict[str, object] = {"execute": command}
+                if arguments is not None:
+                    request["arguments"] = arguments
+                stream.write(json.dumps(request).encode() + b"\n")
                 stream.flush()
                 msg = receive()
                 if "return" not in msg:
@@ -252,7 +257,13 @@ def query_qmp(path: Path) -> dict[str, object]:
                 raise LabError("QEMU machine is not in running state")
             if not isinstance(tpm, list) or not any(x.get("id") == "tpm0" for x in tpm if isinstance(x, dict)):
                 raise LabError("QEMU did not register virtual TPM")
-            return {"qmp_running": True, "qmp_tpm_detected": True}
+            result: dict[str, object] = {"qmp_running": True, "qmp_tpm_detected": True}
+            if screenshot_path is not None:
+                cmd("screendump", {"filename": str(screenshot_path), "format": "png"})
+                if not _regular_nonlink(screenshot_path) or screenshot_path.stat().st_size < 1024:
+                    raise LabError("QEMU screenshot evidence is missing or unexpectedly small")
+                result["screenshot_captured"] = True
+            return result
 
 
 def _finish(proc: subprocess.Popen | None) -> None:
@@ -274,12 +285,17 @@ def launch(
     iso_sha256: str | None = None,
     smoke: bool = True,
     network_mode: str = "disabled",
+    observe_boot: bool = False,
     popen: Callable[..., subprocess.Popen] = subprocess.Popen,
 ) -> dict[str, object]:
     """Launch the disposable VM; always clean up state and processes."""
     config.validate()
     if network_mode not in NETWORK_MODES:
         raise LabError("Unsupported network mode; choose disabled or explicit user-mode NAT")
+    if observe_boot and iso is None:
+        raise LabError("Boot observation requires a verified Arch ISO")
+    if observe_boot and shutil.which("tesseract") is None:
+        raise LabError("Boot observation requires Tesseract OCR; no boot claim will be made")
     if os.name != "posix" or os.geteuid() == 0:
         raise LabError("Run lab as a non-root Linux user")
     available = dependencies()
@@ -291,7 +307,8 @@ def launch(
     with tempfile.TemporaryDirectory(prefix="aegis-lab-", dir="/tmp") as work:
         folder = Path(work)
         paths = prepare_workspace(folder, config, firmware, iso, iso_sha256=iso_sha256)
-        tpm_args, vm_args = command_lines(config, firmware, paths, interactive=not smoke, network_mode=network_mode)
+        tpm_args, vm_args = command_lines(config, firmware, paths, interactive=not smoke,
+                                           network_mode=network_mode, observe_boot=observe_boot)
         tpm_proc = None
         vm_proc = None
         try:
@@ -313,7 +330,28 @@ def launch(
                         if time.monotonic() > qmp_deadline:
                             raise LabError("QEMU did not create its QMP socket")
                         time.sleep(.1)
-                    evidence = query_qmp(paths["qmp_sock"])
+                    if observe_boot:
+                        # Give OVMF and the ISO bootloader time to present the UEFI menu.
+                        time.sleep(min(12.0, config.seconds / 2))
+                        screenshot = folder / "boot-screen.png"
+                        evidence = query_qmp(paths["qmp_sock"], screenshot)
+                        try:
+                            ocr = subprocess.run(
+                                ["tesseract", str(screenshot), "stdout", "--psm", "6"],
+                                check=True, capture_output=True, text=True, timeout=10,
+                            ).stdout
+                        except (OSError, subprocess.SubprocessError) as exc:
+                            raise LabError("Boot screenshot OCR failed; guest boot remains unverified") from exc
+                        normalized_ocr = " ".join(ocr.casefold().split())
+                        boot_menu_detected = (
+                            "arch linux" in normalized_ocr and "install medium" in normalized_ocr
+                        )
+                        evidence["arch_boot_menu_detected"] = boot_menu_detected
+                        evidence["guest_boot_verified"] = boot_menu_detected
+                        if not boot_menu_detected:
+                            raise LabError("Verified ISO attached, but expected Arch UEFI boot-menu text was not detected")
+                    else:
+                        evidence = query_qmp(paths["qmp_sock"])
                     deadline = time.monotonic() + config.seconds
                     while time.monotonic() < deadline:
                         if vm_proc.poll() is not None:
@@ -321,8 +359,10 @@ def launch(
                         time.sleep(min(.1, max(.001, deadline - time.monotonic())))
                     if vm_proc.poll() is not None:
                         raise LabError("QEMU exited during launch smoke interval")
-                    return {"status": "LAUNCH_SMOKE_PASSED", "seconds": config.seconds,
-                            "guest_boot_verified": False, "installation_performed": False,
+                    return {"status": "BOOT_MENU_DETECTED" if observe_boot else "LAUNCH_SMOKE_PASSED",
+                            "seconds": config.seconds,
+                            "guest_boot_verified": bool(observe_boot and evidence.get("arch_boot_menu_detected")),
+                            "installation_performed": False,
                             "network_mode": network_mode,
                             "guest_network_enabled": network_mode == "user-nat-explicit",
                             "inbound_port_forwarding_enabled": False,
@@ -359,11 +399,14 @@ def main(argv: list[str] | None = None) -> int:
     group.add_argument("--check", action="store_true", help="inspect installed lab dependencies; no changes")
     group.add_argument("--smoke", action="store_true", help="launch UEFI/TPM virtual machine for a short time")
     group.add_argument("--run", action="store_true", help="start interactive VM; Ctrl+C cleans up disposable state")
+    group.add_argument("--observe-boot", action="store_true",
+                       help="capture loopback-only VNC screenshot and verify Arch UEFI boot-menu text with OCR")
     parser.add_argument("--iso", type=Path, help="optional local Arch ISO to verify and copy into private lab")
     parser.add_argument("--iso-sha256", help="expected SHA-256 from an independently trusted Arch download/checksum source")
     parser.add_argument("--network-mode", choices=sorted(NETWORK_MODES), default="disabled",
                         help="disabled by default; user-nat-explicit enables outbound guest NAT without port forwarding")
-    parser.add_argument("--seconds", type=float, default=5.0, help="smoke interval (1–30 seconds)")
+    parser.add_argument("--seconds", type=float, default=20.0 if "--observe-boot" in (argv if argv is not None else sys.argv[1:]) else 5.0,
+                        help="smoke interval (1–30 seconds; boot observation defaults to 20)")
     parser.add_argument("--ram-mib", type=int, default=2048)
     parser.add_argument("--cpus", type=int, default=2)
     args = parser.parse_args(argv)
@@ -379,7 +422,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = launch(LabConfig(ram_mib=args.ram_mib, cpus=args.cpus, seconds=args.seconds),
                         args.iso, iso_sha256=args.iso_sha256, smoke=args.smoke,
-                        network_mode=args.network_mode)
+                        network_mode=args.network_mode, observe_boot=args.observe_boot)
     except (LabError, OSError) as exc:
         print(f"AEGIS lab refused/failed: {exc}", file=sys.stderr)
         return 2
@@ -387,7 +430,7 @@ def main(argv: list[str] | None = None) -> int:
         print("AEGIS lab interrupted; disposable workspace cleaned up.", file=sys.stderr)
         return 130
     print(json.dumps(result, indent=2, sort_keys=True))
-    return 0 if args.smoke or result.get("exit_code") == 0 else 1
+    return 0 if args.smoke or args.observe_boot or result.get("exit_code") == 0 else 1
 
 
 if __name__ == "__main__":
