@@ -82,7 +82,8 @@ def verify_storage_plan_integrity(plan: dict[str, Any]) -> bool:
     expected = plan["plan_digest"]
     unsigned = {key: value for key, value in plan.items() if key != "plan_digest"}
     try:
-        import hmac\n        return hmac.compare_digest(expected, _canonical_digest(unsigned))
+        import hmac
+        return hmac.compare_digest(expected, _canonical_digest(unsigned))
     except (PlanError, TypeError, ValueError):
         return False
 
