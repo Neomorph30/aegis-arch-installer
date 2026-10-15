@@ -16,7 +16,8 @@ can be *observed and proposed* today, not certified installers/drivers.
 | TPM 2.0 | Kernel-exposed version hint | Attestation policy and PIN anti-lockout tests |
 | Secure Boot | EFI variable hint only | Signed UKIs, key lifecycle and firmware tests |
 | Ethernet/Wi-Fi | Bounded HTTPS test, opt-in iwctl/nmtui | Actual networking hardware/driver tests, persistence |
-| KDE Plasma | Not installed | Real workstation smoke tests |
+| KDE Plasma | Initial desktop target; not installed by current preview | Package/session/display-manager tests, updates, GPU matrix, recovery and real workstation smoke tests |
+| GNOME / Xfce / custom desktops | Visible as planned choices in desktop-selection contract; disabled | Independent package, login, security, accessibility, update and recovery qualification before enabling |
 | Steam/Proton/Quest 3 | Package recommendations only | Live gaming/VR compatibility and benchmarks |
 | Biometrics | Not implemented | Sensor driver, PAM, recovery and lockout tests |
 
