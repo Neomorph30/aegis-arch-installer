@@ -114,10 +114,13 @@ def assess_inventory(observation: dict[str, Any]) -> dict[str, Any]:
             ident = serial.strip()
         if isinstance(wwn, str) and wwn.strip():
             ident = wwn.strip()
-        if ident is None:
+        # Stable serial/WWN identifiers are required for physical-disk candidates.
+        # Partitions and device-mapper nodes commonly inherit identity from a parent
+        # and must not be rejected solely because their own fields are empty.
+        if ident is None and kind == "disk":
             add("MISSING_STABLE_IDENTITY", "error",
-                "No stable serial or WWN identifier is available for this device.",
-                "Refresh discovery and resolve the device identity before planning.")
+                "No stable serial or WWN identifier is available for this disk.",
+                "Refresh discovery and resolve the disk identity before planning.")
             state = "blocked"
         for label, raw in (("serial", serial), ("wwn", wwn)):
             if isinstance(raw, str) and raw != "":
