@@ -202,9 +202,13 @@ def assess_inventory(observation: dict[str, Any]) -> dict[str, Any]:
         for child in children:
             visit(child, depth + 1)
 
-    for root in observation["devices"]:
+    for index, root in enumerate(observation["devices"]):
         visit(root)
         if count >= _MAX_NODES:
+            if index + 1 < len(observation["devices"]) and not limit_reported:
+                add("TREE_LIMIT", "error", "Device tree exceeds safety limits.",
+                    "Inspect hardware topology manually.")
+                limit_reported = True
             break
 
     blocked = any(device["state"] == "blocked" for device in devices) or any(
