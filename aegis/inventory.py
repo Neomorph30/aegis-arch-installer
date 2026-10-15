@@ -110,6 +110,11 @@ def assess_inventory(observation: dict[str, Any]) -> dict[str, Any]:
             ident = serial.strip()
         if isinstance(wwn, str) and wwn.strip():
             ident = wwn.strip()
+        if ident is None:
+            add("MISSING_STABLE_IDENTITY", "error",
+                "No stable serial or WWN identifier is available for this device.",
+                "Refresh discovery and resolve the device identity before planning.")
+            state = "blocked"
         for label, raw in (("serial", serial), ("wwn", wwn)):
             if isinstance(raw, str) and raw != "":
                 normalized = raw.strip()
@@ -126,8 +131,11 @@ def assess_inventory(observation: dict[str, Any]) -> dict[str, Any]:
                     # same device; only cross-device collisions are ambiguous.
                     seen_ids[normalized] = path if isinstance(path, str) else "UNKNOWN"
 
-        mountpoints, bad_mountpoints = _meaningful_references(
-            node.get("mountpoints", node.get("mountpoint")))
+        if "mountpoints" not in node and "mountpoint" not in node:
+            mountpoints, bad_mountpoints = False, True
+        else:
+            mountpoints, bad_mountpoints = _meaningful_references(
+                node.get("mountpoints", node.get("mountpoint")))
         holders, bad_holders = _meaningful_references(node.get("holders"))
         reasons: list[str] = []
         if bad_mountpoints:
