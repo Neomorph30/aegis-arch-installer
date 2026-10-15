@@ -129,7 +129,7 @@ def interactive_preflight(*, offer_setup: bool = True) -> dict[str, object]:
     try:
         consent = input("Open interactive Wi-Fi setup now? [y/N]: ").strip().lower()
     except (EOFError, KeyboardInterrupt):
-        print("\\nInput closed or interrupted. Network settings unchanged.")
+        print("\nInput closed or interrupted. Network settings unchanged.")
         return result
     if consent not in ("y", "yes"):
         print("Network settings unchanged.")
