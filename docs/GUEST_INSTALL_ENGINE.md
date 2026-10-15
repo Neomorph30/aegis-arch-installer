@@ -62,3 +62,12 @@ python -m lab.workflow_plan_cli --spec preflight-spec.json --observation fresh-o
 ```
 
 This CLI is a review aid, not authorization to mutate a disk. A future executor must obtain its own fresh observation immediately before each mutation and enforce operator confirmation and durable journal intent independently.
+## Explicit outbound networking for package installation
+
+The disposable VM remains network-isolated by default (`-nic none`). When a reviewed guest-install experiment needs package downloads, the host launcher supports an explicit QEMU user-mode NAT option:
+
+```bash
+python -m lab.runtime --run --iso /path/to/archlinux-x86_64.iso --iso-sha256 <trusted-sha256> --network-mode user-nat-explicit
+```
+
+Use the exact ISO checksum from the official Arch release page and verify the release signature where possible. User-mode NAT allows outbound guest traffic through QEMU's userspace network stack; AEGIS adds no host port-forwarding rules and does not enable bridged networking. This is an opt-in transport setting, not a network allowlist: the guest may reach destinations permitted by QEMU user networking and the host's network policy. Keep credentials and sensitive data out of the lab, and return to the default `disabled` mode when networking is not needed. The current launch smoke still does not prove the ISO booted or that an installation succeeded.
