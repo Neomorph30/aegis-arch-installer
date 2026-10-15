@@ -1,0 +1,55 @@
+name: Arch ISO Launch Attempt (Not Boot Proof)
+on:
+  push:
+    branches:
+      - feature/arch-iso-launch-smoke
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: aegis-arch-iso-launch-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verified-iso-launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ARCH_ISO_VERSION: '2026.10.01'
+      ARCH_ISO_SHA256: '684ded26c63240ff4a41e8c25ee84ea6da233f557364821f13d12c2b0a9059a5'
+    steps:
+      - name: Checkout reviewed lab code
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: '3.13'
+      - name: Verify preview safety guardrail
+        run: python tools/security_lint.py
+      - name: Install disposable guest emulation dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf swtpm curl
+      - name: Download pinned official Arch ISO
+        env:
+          ISO_VERSION: ${{ env.ARCH_ISO_VERSION }}
+        run: |
+          set -euo pipefail
+          iso="$RUNNER_TEMP/archlinux-$ISO_VERSION-x86_64.iso"
+          curl --fail --location --retry 3 --retry-delay 2 --output "$iso" \
+            "https://geo.mirror.pkgbuild.com/iso/$ISO_VERSION/archlinux-$ISO_VERSION-x86_64.iso"
+          printf '%s  %s\n' "$ARCH_ISO_SHA256" "$iso" | sha256sum --check --strict
+      - name: Launch verified ISO in isolated UEFI and software TPM VM
+        run: |
+          set -euo pipefail
+          python -m lab --check
+          python -m lab --smoke --seconds 20 \
+            --iso "$RUNNER_TEMP/archlinux-$ARCH_ISO_VERSION-x86_64.iso" \
+            --iso-sha256 "$ARCH_ISO_SHA256"
+      - name: State evidence boundary
+        if: always()
+        run: |
+          echo "This workflow verifies the pinned ISO digest and proves QEMU stayed running with the ISO attached."
+          echo "It does NOT verify that the Arch boot menu, kernel, live environment, or installer reached a usable state."
+          echo "guest_boot_verified remains false; no installation or disk mutation is performed."
