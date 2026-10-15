@@ -50,7 +50,7 @@ def run_review_session(
             if fresh.get("spec_digest") != spec.get("spec_digest"):
                 raise WorkflowPlanError("Target evidence changed during preflight")
         except (GuestProbeError, InstallSpecError, WorkflowPlanError, TypeError, ValueError) as exc:
-            note = "probe_timeout" if "timeout" in str(exc).casefold() else "invalid_target"
+            note = "probe_timeout" if ("timeout" in str(exc).casefold() or "timed out" in str(exc).casefold()) else "invalid_target"
             journal.append("phase_result", phase="preflight", status="FAILED", note_code=note)
             return _blocked(f"Read-only preflight failed: {exc}", journal.path)
         journal.append("phase_result", phase="preflight", status="SUCCEEDED")
