@@ -7,6 +7,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from aegis.cli import main
 
@@ -52,6 +53,28 @@ class InventoryAssessorCliTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(result["status"], "blocked")
         self.assertIs(result["write_authorized"], False)
+
+    @patch("aegis.cli.read_assessment_observation")
+    def test_live_assessment_uses_read_only_hardware_observation(self, probe):
+        probe.return_value = observation()
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            code = main(["assess", "--live"])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(stdout.getvalue())["status"], "review_required")
+        probe.assert_called_once_with()
+
+    @patch("aegis.cli.read_assessment_observation")
+    def test_live_probe_failure_is_nonzero_and_does_not_claim_clearance(self, probe):
+        from aegis.hardware import HardwareInspectionError
+        probe.side_effect = HardwareInspectionError("swap state unavailable")
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = main(["assess", "--live"])
+        self.assertEqual(code, 2)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("swap state unavailable", stderr.getvalue())
 
     def test_malformed_fixture_is_reported_as_blocked(self):
         code, output, _ = self.run_assess({"devices": "not-a-list"})
