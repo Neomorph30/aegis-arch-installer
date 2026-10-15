@@ -168,7 +168,11 @@ def menu(inventory_file: str | None = None) -> int:
     print("NO DISK WRITES: this build cannot install an operating system.\n")
     if inventory_file is None:
         print("\nNETWORK PREFLIGHT (optional network setup only)" )
-        interactive_preflight()
+        try:
+            interactive_preflight()
+        except (NetworkSetupError, OSError, ValueError) as exc:
+            print(f"Network preflight unavailable: {exc}", file=sys.stderr)
+            print("Recovery: continue without network changes; retry from menu option 6 if needed.")
     else:
         print("Using fixture inventory: real network preflight skipped.")
     while True:
@@ -187,7 +191,12 @@ def menu(inventory_file: str | None = None) -> int:
             print("Exiting without changes.")
             return 0
         if choice == "1":
-            data = _inventory(inventory_file)
+            try:
+                data = _inventory(inventory_file)
+            except (HardwareInspectionError, OSError, ValueError, KeyError, TypeError) as exc:
+                print(f"Hardware inventory unavailable: {exc}", file=sys.stderr)
+                print("Recovery: refresh the inventory source and retry; returning to menu.")
+                continue
             print(f"\nCPU: {data.get('cpu')} | TPM: {data.get('tpm_version', 'unverified')}")
             print(f"UEFI: {data.get('uefi_detected')} | Secure Boot: {data.get('secure_boot_state', 'unverified')}")
             _print_devices(data.get("disks", []))
@@ -197,7 +206,13 @@ def menu(inventory_file: str | None = None) -> int:
             interactive_preflight()
         elif choice in ("3", "4"):
             profile = "secure-gaming" if choice == "3" else "secure-workstation"
-            print(json.dumps(recommend(_inventory(inventory_file), profile), indent=2))
+            try:
+                recommendation = recommend(_inventory(inventory_file), profile)
+            except (HardwareInspectionError, OSError, ValueError, KeyError, TypeError) as exc:
+                print(f"Cannot generate a trustworthy profile: {exc}", file=sys.stderr)
+                print("Recovery: refresh hardware inventory and retry; returning to menu.")
+                continue
+            print(json.dumps(recommendation, indent=2))
         else:
             print("Invalid selection; no changes made.")
         print()
