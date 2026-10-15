@@ -99,6 +99,20 @@ class PlannerTests(unittest.TestCase):
         with self.assertRaises(PlanError):
             build_storage_plan(data, "/dev/nvme0n1")
 
+    def test_malformed_device_paths_block_plan(self):
+        for path in ("/dev/nvme0n1\\n", "/dev//sda", "/dev/../sda", "/dev/sda;echo"):
+            with self.subTest(path=path):
+                data = inventory()
+                data["disks"][0]["path"] = path
+                with self.assertRaises(PlanError):
+                    build_storage_plan(data, path)
+
+    def test_control_characters_in_stable_identifiers_block_plan(self):
+        data = inventory()
+        data["disks"][0]["serial"] = "PRIMARY-001\\nforged"
+        with self.assertRaises(PlanError):
+            build_storage_plan(data, "/dev/nvme0n1")
+
     def test_malformed_disk_entry_blocks_plan(self):
         data = inventory()
         data["disks"].append("not-a-disk-object")
