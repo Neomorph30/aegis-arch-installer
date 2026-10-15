@@ -39,7 +39,7 @@ class InventoryAssessmentTests(unittest.TestCase):
                 self.assertEqual(result["status"], "blocked")
                 self.assertFalse(result["write_authorized"])
 
-    def test_duplicate_paths_block_both_assessment(self):
+    def test_duplicate_paths_block_assessment(self):
         result = assess(disk(), disk(serial="SERIAL-B", wwn="WWN-B"))
         self.assertEqual(result["status"], "blocked")
         self.assertTrue(any(f["code"] == "AMBIGUOUS_PATH" for f in result["findings"]))
@@ -58,6 +58,18 @@ class InventoryAssessmentTests(unittest.TestCase):
     def test_same_serial_and_wwn_text_on_one_device_is_not_self_collision(self):
         result = assess(disk(serial="SAME", wwn="SAME"))
         self.assertEqual(result["status"], "review_required")
+
+    def test_missing_stable_identity_blocks(self):
+        result = assess(disk(serial=None, wwn=None))
+        self.assertEqual(result["status"], "blocked")
+        self.assertTrue(any(f["code"] == "MISSING_STABLE_IDENTITY" for f in result["findings"]))
+
+    def test_missing_mount_state_blocks(self):
+        value = disk()
+        value.pop("mountpoints")
+        result = assess(value)
+        self.assertEqual(result["status"], "blocked")
+        self.assertTrue(any(f["code"] == "MALFORMED_MOUNTPOINTS" for f in result["findings"]))
 
     def test_malformed_identifier_blocks(self):
         for key, value in (("serial", 42), ("wwn", []), ("serial", "SERIAL\nA")):
