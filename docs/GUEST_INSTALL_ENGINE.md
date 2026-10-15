@@ -1,6 +1,6 @@
 # Layer 07 — Minimal Arch guest installation contract
 
-**Status: preflight specification implemented; guest installation engine remains unimplemented.** The pure `lab.install_spec` module validates a guest observation and creates a tamper-detectable review spec. The read-only `lab.guest_probe` adapter collects lsblk, sysfs, and active-swap observations with fixed commands and bounded timeouts. The `python -m lab.guest_preflight` entry point prints a JSON review spec or a blocked recovery record. `lab.iso_validation` verifies a local ISO's ISO9660 descriptor, Arch volume label and SHA-256 against a digest supplied independently; the VM launcher refuses `--iso` unless `--iso-sha256` is supplied. These modules do not run installation commands or modify disks.
+**Status: preflight specification implemented; guest installation engine remains unimplemented.** The pure `lab.install_spec` module validates a guest observation and creates a tamper-detectable review spec. The read-only `lab.guest_probe` adapter collects lsblk, sysfs, and active-swap observations with fixed commands and bounded timeouts. The `python -m lab.guest_preflight` entry point prints a JSON review spec or a blocked recovery record. `lab.iso_validation` verifies a local ISO's ISO9660 descriptor, Arch volume label and SHA-256 against a digest supplied independently; the VM launcher refuses `--iso` unless `--iso-sha256` is supplied. The `lab.transaction_journal` module adds a private, append-only, hash-chained journal and a recovery assessment that refuses automatic phase retries and stops on ambiguous destructive state. These modules do not run installation commands or modify disks.
 
 The existing QEMU lab proves that QEMU, paired OVMF firmware, and a software TPM can start together. It does not prove that the Arch ISO boots or that an installed guest can boot. Layer 07 must close that gap using disposable virtual disks only.
 
@@ -28,7 +28,7 @@ The existing QEMU lab proves that QEMU, paired OVMF firmware, and a software TPM
 
 - Classify failures as transient read-only probe, configuration, destructive-phase failure, boot failure, or integrity failure.
 - Retry only bounded read-only transient probes. Never automatically repeat partitioning, formatting, encryption, package removal, or bootloader writes.
-- On interruption, inspect the durable journal and re-probe target identity before deciding whether to resume. If the state is ambiguous, stop and preserve evidence.
+- On interruption, validate the hash-chained journal and re-probe target identity before any new decision. The initial journal implementation is a recording/recovery-policy primitive, not yet wired to an installer executor. If state is ambiguous, stop and preserve evidence.
 - The safest initial recovery for the disposable lab is to preserve the journal, destroy only the ephemeral VM workspace after evidence capture, and create fresh virtual disks. Do not claim rollback if writes already occurred.
 - Never place LUKS credentials, TPM PINs, recovery keys, or signing secrets in logs, reports, command arguments, environment variables, or CI artifacts.
 
