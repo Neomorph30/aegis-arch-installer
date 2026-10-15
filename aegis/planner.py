@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+import hashlib
+import json
 
 MIB = 1024 ** 2
 GIB = 1024 ** 3
@@ -27,14 +29,62 @@ class PlanError(ValueError):
     pass
 
 
+def _validated_disks(inventory: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = inventory.get("disks")
+    if not isinstance(raw, list) or not raw:
+        raise PlanError("Inventory must contain a non-empty disks list")
+    paths: set[str] = set()
+    identifiers: dict[str, str] = {}
+    result: list[dict[str, Any]] = []
+    for index, disk in enumerate(raw):
+        if not isinstance(disk, dict):
+            raise PlanError(f"Inventory disk entry {index} is malformed")
+        path = disk.get("path")
+        if not isinstance(path, str) or not path.startswith("/dev/") or ".." in path or path in paths:
+            raise PlanError("Inventory has an invalid or duplicate device path")
+        paths.add(path)
+        # Treat serial and WWN as separate namespaces, but reject collisions within each.
+        for field in ("serial", "wwn"):
+            value = disk.get(field)
+            if value is not None and value != "":
+                if not isinstance(value, str) or not value.strip():
+                    raise PlanError(f"Inventory contains an invalid {field}")
+                key = f"{field}:{value.strip()}"
+                if key in identifiers:
+                    raise PlanError(f"Inventory has duplicate {field} values; device identity is ambiguous")
+                identifiers[key] = path
+        result.append(disk)
+    return result
+
+
 def _find_disk(inventory: dict[str, Any], path: str) -> dict[str, Any]:
     if not isinstance(path, str) or not path.startswith("/dev/") or ".." in path:
         raise PlanError("Disk must have a /dev/ device path")
-    matches = [d for d in inventory.get("disks", []) if d.get("path") == path
-               and d.get("type", "disk") == "disk"]
+    disks = _validated_disks(inventory)
+    matches = [d for d in disks if d.get("path") == path and d.get("type", "disk") == "disk"]
     if len(matches) != 1:
         raise PlanError(f"Disk {path!r} is not uniquely present in the inventory")
     return matches[0]
+
+
+def _canonical_digest(value: dict[str, Any]) -> str:
+    try:
+        encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise PlanError("Plan contains data that cannot be canonically serialized") from exc
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def verify_storage_plan_integrity(plan: dict[str, Any]) -> bool:
+    """Detect accidental or malicious edits to a generated proposal; not authorization."""
+    if not isinstance(plan, dict) or not isinstance(plan.get("plan_digest"), str):
+        return False
+    expected = plan["plan_digest"]
+    unsigned = {key: value for key, value in plan.items() if key != "plan_digest"}
+    try:
+        import hmac\n        return hmac.compare_digest(expected, _canonical_digest(unsigned))
+    except (PlanError, TypeError, ValueError):
+        return False
 
 
 def _partition_summary(children: Any) -> list[dict[str, Any]]:
@@ -198,8 +248,8 @@ def build_storage_plan(
             }[secondary_action],
             "partitions": _secondary_layout(second_disk["size_bytes"]) if secondary_action == "erase" else [],
         })
-    return {
-        "schema_version": "0.2",
+    plan = {
+        "schema_version": "0.3",
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "status": "PROPOSAL_ONLY",
         "execution_enabled": False,
@@ -221,3 +271,11 @@ def build_storage_plan(
             {"name": "Offline recovery", "result": "UNVERIFIED"},
         ],
     }
+    # Fingerprint the selected and available storage identities to detect stale proposals.
+    plan["inventory_fingerprint"] = _canonical_digest({
+        "disks": [_disk_identity(d) for d in _validated_disks(inventory)],
+        "architecture": inventory.get("architecture"),
+        "uefi_detected": inventory.get("uefi_detected"),
+    })
+    plan["plan_digest"] = _canonical_digest(plan)
+    return plan
