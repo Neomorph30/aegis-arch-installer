@@ -76,11 +76,26 @@ class GuestProbeTests(unittest.TestCase):
             observe_guest(sys_root=self.sys, proc_root=self.proc,
                           run=lambda *args, **kwargs: SimpleNamespace(stdout="{"))
 
-    def test_probe_timeout_fails_closed(self):
+    def test_probe_timeout_fails_closed_after_one_retry(self):
+        calls = []
         def timeout(*args, **kwargs):
+            calls.append(1)
             raise subprocess.TimeoutExpired("lsblk", 8)
-        with self.assertRaisesRegex(GuestProbeError, "Read-only lsblk probe failed"):
+        with self.assertRaisesRegex(GuestProbeError, "timed out twice"):
             observe_guest(sys_root=self.sys, proc_root=self.proc, run=timeout)
+        self.assertEqual(len(calls), 2)
+
+    def test_transient_probe_timeout_recovers_on_single_retry(self):
+        calls = []
+        valid_output = json.dumps(lsblk_data())
+        def transient(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 1:
+                raise subprocess.TimeoutExpired("lsblk", 8)
+            return SimpleNamespace(stdout=valid_output)
+        result = observe_guest(sys_root=self.sys, proc_root=self.proc, run=transient)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(result["environment"]["sys_vendor"], "QEMU")
 
 
     def test_unreadable_holder_state_is_not_reported_as_empty(self):
