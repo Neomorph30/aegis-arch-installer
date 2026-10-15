@@ -53,3 +53,12 @@ The command is read-only and emits JSON with either `VERIFIED_ARCH_ISO` or `BLOC
 ## Not in scope for this layer
 
 TPM PIN enrollment and signed UKIs belong to Layer 09; secondary-drive management and offline recovery drills belong to Layer 08; graphics, gaming, VR, biometrics and optimization are later layers. A passing guest install does not qualify physical-device installation.
+## Review-only workflow-plan CLI
+
+The plan builder can be run against a saved preflight spec and a separately captured fresh observation. Both inputs must be bounded, single-link regular JSON files; symlinks, devices, pipes, malformed JSON, oversized inputs, and changed target evidence are rejected. The command emits a review-only plan to stdout and never runs hardware probes or installation commands:
+
+```bash
+python -m lab.workflow_plan_cli --spec preflight-spec.json --observation fresh-observation.json
+```
+
+This CLI is a review aid, not authorization to mutate a disk. A future executor must obtain its own fresh observation immediately before each mutation and enforce operator confirmation and durable journal intent independently.
