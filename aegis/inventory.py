@@ -122,7 +122,9 @@ def assess_inventory(observation: dict[str, Any]) -> dict[str, Any]:
                 "No stable serial or WWN identifier is available for this disk.",
                 "Refresh discovery and resolve the disk identity before planning.")
             state = "blocked"
-        for label, raw in (("serial", serial), ("wwn", wwn)):
+        # Collision checks protect physical-disk selection. Child nodes may repeat
+        # a parent device's identifiers in some discovery formats.
+        for label, raw in ((("serial", serial), ("wwn", wwn)) if kind == "disk" else ()):
             if isinstance(raw, str) and raw != "":
                 normalized = raw.strip()
                 if (not normalized or any(ord(ch) < 32 or ord(ch) == 127 for ch in normalized)):
