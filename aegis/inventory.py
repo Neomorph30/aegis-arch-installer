@@ -164,15 +164,15 @@ def assess_inventory(observation: dict[str, Any]) -> dict[str, Any]:
         elif holders:
             reasons.append("has_holders")
 
-        active_swap = node.get("active_swap", False)
-        ambiguous = node.get("ambiguous", False)
-        if not isinstance(active_swap, bool):
+        active_swap = node.get("active_swap")
+        ambiguous = node.get("ambiguous")
+        if "active_swap" not in node or not isinstance(active_swap, bool):
             add("MALFORMED_SWAP_STATE", "error", "Active-swap state is not a boolean.",
                 "Repeat discovery and inspect active swap.")
             reasons.append("malformed")
         elif active_swap:
             reasons.append("active_swap")
-        if not isinstance(ambiguous, bool):
+        if "ambiguous" not in node or not isinstance(ambiguous, bool):
             add("MALFORMED_AMBIGUITY_STATE", "error", "Ambiguity state is not a boolean.",
                 "Repeat discovery and inspect device identity.")
             reasons.append("malformed")
