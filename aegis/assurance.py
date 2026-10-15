@@ -35,7 +35,8 @@ CAPABILITIES: tuple[Capability, ...] = (
     Capability("signed-boot", "Signed UKI and Secure Boot policy management", "NOT_IMPLEMENTED", "Secure Boot enrollment and attestation required"),
     Capability("desktop-gaming-vr", "KDE, kernel, graphics, gaming and VR installation", "NOT_IMPLEMENTED", "Only package recommendations exist"),
     Capability("security-guardian", "Firewall, malware scans and mandatory access control", "NOT_IMPLEMENTED", "No host policy changes shipped"),
-    Capability("adaptive-optimizer", "Reversible benchmark-backed hardware tuning", "NOT_IMPLEMENTED", "No optimization operations shipped"),
+    Capability("optimization-review-policy", "Evidence-gated review of benchmark candidates", "PREVIEW_ONLY", "Unit-tested comparison policy only; no benchmarks run, system changes applied, or rollback executed"),
+    Capability("adaptive-optimizer", "Reversible benchmark-backed hardware tuning", "NOT_IMPLEMENTED", "No hardware probes, tuning operations, or rollback executor shipped"),
     Capability("public-iso", "Signed bootable end-user installation medium", "NOT_IMPLEMENTED", "Reproducible, qualified build required"),
 )
 
