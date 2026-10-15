@@ -23,7 +23,9 @@ reviewed and tested installation executor is ever introduced.
   are received or stored by AEGIS. Network settings can change only if the user
   chooses to launch that tool.
 - Builds advisory workstation/gaming package profiles without installing packages
-  or assuming a detected GPU has compatible drivers.
+  or assuming a detected GPU has compatible drivers. KDE Plasma is the initial
+  default desktop candidate; unqualified alternatives are rejected, and all
+  package lists remain recommendations rather than executed install commands.
 - Produces 0600 JSON proposals and sanitized HTML planning reports that never
   claim a real security operation passed.
 - Provides a **fictional hardware fixture** so the CLI and wizard can be tested

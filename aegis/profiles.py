@@ -4,16 +4,26 @@ from __future__ import annotations
 
 from typing import Any
 
+from .desktop_selection import DesktopSelectionError, resolve_desktop_selection
+
 PROFILES = frozenset({"secure-workstation", "secure-gaming"})
 
 
-def recommend(inventory: dict[str, Any], profile: str = "secure-gaming") -> dict[str, Any]:
+def recommend(
+    inventory: dict[str, Any],
+    profile: str = "secure-gaming",
+    desktop: str | None = None,
+) -> dict[str, Any]:
     """Make support-qualified recommendations, not install or tuning commands.
 
     A GPU's presence is not sufficient to guarantee compatible driver packages.
     """
     if profile not in PROFILES:
         raise ValueError(f"Unknown profile: {profile}")
+    try:
+        desktop_choice = resolve_desktop_selection(desktop)
+    except DesktopSelectionError as exc:
+        raise ValueError(str(exc)) from exc
     gpu_lines = inventory.get("gpu_devices") or []
     lines = " ".join(str(s).lower() for s in gpu_lines)
     vendors = [name for name, hints in {
@@ -23,10 +33,17 @@ def recommend(inventory: dict[str, Any], profile: str = "secure-gaming") -> dict
     }.items() if any(h in lines for h in hints)]
     packages = ["linux", "linux-lts", "linux-firmware", "cryptsetup", "btrfs-progs",
                 "networkmanager", "firewalld", "apparmor"]
+    # KDE is the initial supported desktop target. These remain candidates only;
+    # package availability and driver compatibility must be checked at install time.
+    if desktop_choice["desktop"] == "kde-plasma":
+        packages += [
+            "plasma-meta", "sddm", "dolphin", "konsole", "ark",
+            "plasma-nm", "xdg-desktop-portal-kde",
+        ]
     if profile == "secure-gaming":
-        packages += ["linux-zen", "steam", "gamemode", "mangohud", "pipewire", "wireplumber"]
+        packages += ["linux-zen", "steam", "gamemode", "mangohud", "pipewire", "pipewire-alsa", "pipewire-pulse", "wireplumber"]
     elif profile == "secure-workstation":
-        packages += ["pipewire", "wireplumber"]
+        packages += ["pipewire", "pipewire-alsa", "pipewire-pulse", "wireplumber"]
     arch = inventory.get("architecture", "unknown")
     cpu = (inventory.get("cpu") or "").lower()
     if "intel" in cpu:
@@ -50,6 +67,11 @@ def recommend(inventory: dict[str, Any], profile: str = "secure-gaming") -> dict
     return {
         "schema_version": "0.2",
         "profile": profile,
+        "desktop": {
+            "id": desktop_choice["desktop"],
+            "name": desktop_choice["display_name"],
+            "status": "RECOMMENDATIONS_ONLY",
+        },
         "status": "RECOMMENDATIONS_ONLY",
         "architecture": arch,
         "detected_gpu_vendors": vendors,
