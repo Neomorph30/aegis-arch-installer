@@ -197,7 +197,9 @@ def command_lines(config: LabConfig, firmware: tuple[Path, Path], prepared: dict
             "-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
             "-device", "tpm-tis,tpmdev=tpm0"]
     if "iso" in prepared:
-        qemu += ["-drive", f"if=none,id=installer,media=cdrom,format=raw,readonly=on,file={prepared['iso']}",
+        # Explicitly boot the verified read-only installer medium before the blank target disk.
+        qemu += ["-boot", "order=d",
+                 "-drive", f"if=none,id=installer,media=cdrom,format=raw,readonly=on,file={prepared['iso']}",
                  "-device", "virtio-scsi-pci,id=scsi0",
                  "-device", "scsi-cd,bus=scsi0.0,drive=installer"]
     return tpm, qemu
