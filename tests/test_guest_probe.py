@@ -71,6 +71,47 @@ class GuestProbeTests(unittest.TestCase):
         (self.sys / "class/net/enp0s3").mkdir()
         self.assertEqual(self.observe()["network_mode"], "unverified")
 
+    def test_explicit_qemu_user_nat_is_recognized_from_fixed_route(self):
+        interface = "enp0s3"
+        (self.sys / f"class/net/{interface}").mkdir()
+        def runner(command, **kwargs):
+            self.commands.append((command, kwargs))
+            if command[0] == "lsblk":
+                return SimpleNamespace(stdout=json.dumps(lsblk_data()))
+            if command[0:4] == ["ip", "-json", "-4", "address"]:
+                return SimpleNamespace(stdout=json.dumps([{
+                    "ifname": interface,
+                    "addr_info": [{"family": "inet", "local": "10.0.2.15", "prefixlen": 24}],
+                }]))
+            if command[0:3] == ["ip", "-json", "route"]:
+                return SimpleNamespace(stdout=json.dumps([{
+                    "dst": "default", "gateway": "10.0.2.2", "dev": interface,
+                }]))
+            raise AssertionError("unexpected read-only probe command")
+        result = observe_guest(sys_root=self.sys, proc_root=self.proc, run=runner)
+        self.assertEqual(result["network_mode"], "user-nat-explicit")
+        self.assertEqual([command[0] for command, _ in self.commands], ["lsblk", "ip", "ip"])
+        self.assertTrue(all(not kwargs.get("shell", False) for _, kwargs in self.commands))
+
+    def test_unrecognized_default_route_remains_unverified(self):
+        interface = "enp0s3"
+        (self.sys / f"class/net/{interface}").mkdir()
+        def runner(command, **kwargs):
+            if command[0] == "lsblk":
+                return SimpleNamespace(stdout=json.dumps(lsblk_data()))
+            if command[0:4] == ["ip", "-json", "-4", "address"]:
+                return SimpleNamespace(stdout=json.dumps([{
+                    "ifname": interface,
+                    "addr_info": [{"family": "inet", "local": "192.168.1.20", "prefixlen": 24}],
+                }]))
+            if command[0:3] == ["ip", "-json", "route"]:
+                return SimpleNamespace(stdout=json.dumps([{
+                    "dst": "default", "gateway": "192.168.1.1", "dev": interface,
+                }]))
+            raise AssertionError("unexpected probe command")
+        result = observe_guest(sys_root=self.sys, proc_root=self.proc, run=runner)
+        self.assertEqual(result["network_mode"], "unverified")
+
     def test_malformed_json_fails_closed(self):
         with self.assertRaisesRegex(GuestProbeError, "invalid JSON"):
             observe_guest(sys_root=self.sys, proc_root=self.proc,
