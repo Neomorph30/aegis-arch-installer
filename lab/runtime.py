@@ -410,6 +410,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ram-mib", type=int, default=2048)
     parser.add_argument("--cpus", type=int, default=2)
     args = parser.parse_args(argv)
+    if args.observe_boot and not args.smoke:
+        print("AEGIS lab refused: --observe-boot must be paired with --smoke.", file=sys.stderr)
+        return 2
     if args.check:
         print(json.dumps(dependencies(), indent=2, sort_keys=True))
         return 0
