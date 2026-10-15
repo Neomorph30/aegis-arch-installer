@@ -46,3 +46,10 @@
 - [ ] External independent reviewer endorsement (not falsely claimed)
 
 See [Development Layers](DEVELOPMENT_LAYERS.md) for the full 20-layer plan.
+
+## Layer 02 developer VM lab status
+- [x] Non-root disposable synthetic disks, OVMF variable-store copy and swtpm socket.
+- [x] No-host-passthrough QEMU command construction; no networking or KVM.
+- [x] QMP launch/TPM inspection and automated negative tests.
+- [ ] Complete independent security review and verify actual GitHub Actions QEMU smoke.
+- [ ] Install Arch inside VM (future Layer 07).

@@ -123,3 +123,21 @@ The absence of warnings is not evidence that an installation is safe.
 
 See [LICENSE](LICENSE) (MIT) and [CONTRIBUTING.md](CONTRIBUTING.md).
 Security concerns can be reported according to [SECURITY.md](SECURITY.md).
+
+## Layer 02: disposable VM laboratory (developer-only)
+
+AEGIS includes a **source-checkout-only** `python -m lab` launcher for
+QEMU/OVMF/swtpm with two ephemeral virtual disks and no host-device passthrough.
+The no-write planning CLI is unchanged. No Arch installation engine exists.
+
+```bash
+python -m lab --check
+python -m lab --smoke --seconds 8  # Requires local QEMU, OVMF and swtpm
+```
+
+The smoke test confirms QEMU machine state and TPM registration via a local QMP
+socket; it **does not** demonstrate successful guest OS boot, Secure Boot,
+Linux installation, encryption or recovery. Read [the lab safety and operation
+manual](docs/VIRTUAL_LAB.md) before experiments. The disposable VM runner
+has not been independently security-audited and does not sandbox a compromised
+QEMU process beyond unprivileged execution and restricted device arguments.

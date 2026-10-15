@@ -47,3 +47,15 @@
 - [ ] AppArmor restrictiveness is opt-in unless hardware/software tested.
 - [ ] Final reports distinguish PASSED, FAILED, WARNING, SKIPPED, UNVERIFIED.
 - [ ] Report exports never disclose passwords, encryption keys, PINs or tokens.
+
+## Layer 02 completion gate (guest-installation environment only)
+
+- [x] Private disposable workspace, exclusive regular virtual images, no disk input path.
+- [x] UEFI OVMF code and writable per-run variable-store copy handled separately.
+- [x] Virtual TPM through a private Unix socket and volatile per-run state.
+- [x] No guest networking, host USB, host filesystem sharing or KVM in baseline lab.
+- [x] QMP-based machine status and TPM presence inspection (mock unit tests).
+- [x] Unit tests for synthetic images, invalid inputs, unsafe paths and QMP failure.
+- [ ] Actual QEMU/OVMF/swtpm launch passed on GitHub runner (pending CI evidence).
+- [ ] Independent security review of runtime and hypervisor confinement.
+- [ ] Any real guest Arch install or offline LUKS recovery — explicitly future layers.

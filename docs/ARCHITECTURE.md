@@ -97,3 +97,16 @@ Later releases must validate selected package mirrors and configure a suitable
 persistent networking manager in the installed system independently of the ISO.
 Captive portals, proxies, enterprise Wi-Fi, IPv6-only and missing firmware are
 not yet fully supported by the guided interface.
+
+## Layer 02 host-side virtual laboratory
+
+Source checkout module `lab/runtime.py` (separate from the `aegis` package)
+creates private temporary files and drives an opt-in QEMU/OVMF/swtpm virtual
+machine. It does **not** add a privileged installer/executor to AEGIS. Only
+new sparse files are attached as guest disks; all files created by the lab
+live inside its private workspace, and these limited claims are tested. Lab
+smoke tests observe running QEMU state and registered TPM through a private
+QMP Unix socket, not through guest-installed software. No guest networking
+or host passthrough is configured. No physical host disk is knowingly attached.
+
+See [VIRTUAL_LAB](VIRTUAL_LAB.md) for reproducible commands and remaining risks.
