@@ -110,3 +110,8 @@ QMP Unix socket, not through guest-installed software. No guest networking
 or host passthrough is configured. No physical host disk is knowingly attached.
 
 See [VIRTUAL_LAB](VIRTUAL_LAB.md) for reproducible commands and remaining risks.
+
+
+## Layer 06 virtual-only execution gate
+
+`aegis.virtual_executor` is a simulation harness only. It validates proposal integrity, requires explicit virtual-file mapping and identity confirmation, rejects symlinks/block devices/non-private paths, and writes a new private journal. It does not call subprocesses or mutate virtual images. It cannot execute physical device operations. See [VIRTUAL_EXECUTION_BOUNDARY](VIRTUAL_EXECUTION_BOUNDARY.md).
