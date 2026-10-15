@@ -55,6 +55,20 @@ class ExecutionGateTests(unittest.TestCase):
         result = self.assess("partition_gpt", confirmation=phrase)
         self.assertEqual(result["status"], "BLOCKED")  # explicit target-review phase has not succeeded
 
+    def test_explicit_target_review_requires_exact_confirmation(self):
+        from lab.transaction_journal import TransactionJournal
+        import tempfile
+        from pathlib import Path
+        phrase = confirmation_phrase(self.plan["target"])
+        self.assertEqual(self.assess("explicit_target_review", confirmation="yes")["status"], "BLOCKED")
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = TransactionJournal(Path(tmp) / "journal.jsonl")
+            journal.append("phase_intent", phase="preflight", status="STARTED")
+            journal.append("phase_result", phase="preflight", status="SUCCEEDED")
+            result = self.assess("explicit_target_review", confirmation=phrase, events=journal.read())
+        self.assertEqual(result["status"], "GATE_PASSED_REVIEW_ONLY")
+        self.assertFalse(result["execution_enabled"])
+
     def test_target_review_then_partition_gate_requires_journal_evidence(self):
         from lab.transaction_journal import TransactionJournal
         import tempfile
