@@ -197,9 +197,11 @@ def assess_inventory(observation: dict[str, Any]) -> dict[str, Any]:
             "reasons": list(dict.fromkeys(reasons)),
         })
 
-        children = node.get("children", [])
-        if children is None:
+        if "children" not in node:
+            add("MALFORMED_CHILDREN", "error", "Device child topology was not observed.",
+                "Repeat discovery and inspect the complete block-device tree.")
             return
+        children = node["children"]
         if not isinstance(children, list):
             add("MALFORMED_CHILDREN", "error", "Children field is not a list.",
                 "Refresh inventory and inspect probe output.")
