@@ -95,7 +95,33 @@ class WorkspaceTests(unittest.TestCase):
             self.assertIn('startup-clear', tpm)
             self.assertIn('readonly=on', joined)
             self.assertIn('-display none', joined)
+            self.assertIn('-nic none', joined)
             self.assertIn('-display gtk', ' '.join(command_lines(config, fw, output, interactive=True)[1]))
+
+    def test_explicit_user_nat_is_opt_in_and_has_no_port_forwarding(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            work = root / 'private'
+            work.mkdir(mode=0o700)
+            fw = self._firmware(root)
+            output = prepare_workspace(work, LabConfig(primary_bytes=GIB, secondary_bytes=GIB), fw, None)
+            _, vm = command_lines(LabConfig(primary_bytes=GIB, secondary_bytes=GIB), fw, output,
+                                  network_mode='user-nat-explicit')
+            joined = ' '.join(vm)
+            self.assertIn('-nic user,model=virtio-net-pci', joined)
+            self.assertNotIn('hostfwd=', joined)
+            self.assertNotIn('-nic none', joined)
+
+    def test_unknown_network_mode_fails_closed(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            work = root / 'private'
+            work.mkdir(mode=0o700)
+            fw = self._firmware(root)
+            output = prepare_workspace(work, LabConfig(primary_bytes=GIB, secondary_bytes=GIB), fw, None)
+            with self.assertRaisesRegex(LabError, 'Unsupported network mode'):
+                command_lines(LabConfig(primary_bytes=GIB, secondary_bytes=GIB), fw, output,
+                              network_mode='bridged')
 
     def test_private_workspace_required(self):
         with tempfile.TemporaryDirectory() as d:
