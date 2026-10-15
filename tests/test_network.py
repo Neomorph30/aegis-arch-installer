@@ -95,6 +95,17 @@ class NetworkTests(unittest.TestCase):
     @patch("aegis.network.setup_tool", return_value=("iwd", ["/usr/bin/iwctl"]))
     @patch("aegis.network.launch_wifi_setup", return_value=0)
     @patch("aegis.network.network_preflight")
+    def test_eof_or_ctrl_c_declines_optional_wifi_setup(self, preflight, launch, _tool):
+        for interruption in (EOFError, KeyboardInterrupt):
+            preflight.return_value = {"status": "unverified", "check": "HTTPS", "note": "Unverified", "wifi_interfaces": ["wlan0"]}
+            with patch("builtins.input", side_effect=interruption), patch("sys.stdout", new_callable=io.StringIO):
+                result = network.interactive_preflight()
+            self.assertEqual(result["status"], "unverified")
+        launch.assert_not_called()
+
+    @patch("aegis.network.setup_tool", return_value=("iwd", ["/usr/bin/iwctl"]))
+    @patch("aegis.network.launch_wifi_setup", return_value=0)
+    @patch("aegis.network.network_preflight")
     def test_opt_in_rechecks_network(self, preflight, launch, _tool):
         preflight.side_effect = [
             {"status": "unverified", "check": "HTTPS", "note": "Unverified", "wifi_interfaces": ["wlan0"]},

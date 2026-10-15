@@ -1,7 +1,7 @@
 import io
 import unittest
 from unittest.mock import patch
-from aegis.cli import _choose, wizard
+from aegis.cli import _choose, menu, wizard
 
 class ResilientWizardTests(unittest.TestCase):
     def test_invalid_choice_retries(self):
@@ -13,6 +13,21 @@ class ResilientWizardTests(unittest.TestCase):
         with patch('builtins.input', side_effect=['x', '-1', '8']), patch('sys.stdout', new_callable=io.StringIO) as out:
             self.assertIsNone(_choose('choice: ', 3))
         self.assertIn('retry limit reached', out.getvalue().lower())
+
+    def test_eof_cancels_choice_without_traceback(self):
+        with patch('builtins.input', side_effect=EOFError), patch('sys.stdout', new_callable=io.StringIO) as out:
+            self.assertIsNone(_choose('choice: ', 3))
+        self.assertIn('Cancelling this step safely', out.getvalue())
+
+    def test_ctrl_c_cancels_choice_without_traceback(self):
+        with patch('builtins.input', side_effect=KeyboardInterrupt), patch('sys.stdout', new_callable=io.StringIO) as out:
+            self.assertIsNone(_choose('choice: ', 3))
+        self.assertIn('Cancelling this step safely', out.getvalue())
+
+    def test_menu_eof_exits_cleanly(self):
+        with patch('builtins.input', side_effect=EOFError), patch('sys.stdout', new_callable=io.StringIO) as out:
+            self.assertEqual(menu('fixture.json'), 0)
+        self.assertIn('Exiting without changes', out.getvalue())
 
     def test_empty_list_does_not_prompt(self):
         with patch('builtins.input', side_effect=AssertionError('must not prompt')):
