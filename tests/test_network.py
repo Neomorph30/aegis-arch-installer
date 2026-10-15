@@ -115,7 +115,7 @@ class NetworkTests(unittest.TestCase):
         request.assert_not_called()
         launch.assert_not_called()
 
-    @patch("aegis.network.network_preflight")
+    @patch("aegis.cli.network_preflight")
     def test_readonly_check_does_not_prompt(self, preflight):
         from aegis.cli import main
         preflight.return_value = {"status": "unverified", "check": "HTTPS", "note": "Check failed", "wifi_interfaces": ["wlan0"]}
