@@ -110,6 +110,15 @@ def _partition_summary(children: Any) -> list[dict[str, Any]]:
     return result
 
 
+def _observed_bool(disk: dict[str, Any], field: str) -> bool | None:
+    value = disk.get(field)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    return None
+
+
 def _disk_identity(disk: dict[str, Any]) -> dict[str, Any]:
     mounts = disk.get("mountpoints") or []
     if isinstance(mounts, str):
@@ -121,9 +130,9 @@ def _disk_identity(disk: dict[str, Any]) -> dict[str, Any]:
         "wwn": str(disk.get("wwn") or "").strip() or None,
         "size_bytes": disk.get("size"),
         "transport": disk.get("tran"),
-        "removable": bool(disk.get("rm")),
-        "read_only": bool(disk.get("ro")),
-        "hotplug": bool(disk.get("hotplug")),
+        "removable": _observed_bool(disk, "rm"),
+        "read_only": _observed_bool(disk, "ro"),
+        "hotplug": _observed_bool(disk, "hotplug"),
         "mountpoints": [m for m in mounts if isinstance(m, str) and m.strip()],
         "current_partitions": _partition_summary(disk.get("children", [])),
     }
@@ -141,9 +150,12 @@ def _safety_checks(disk: dict[str, Any], role: str, destructive: bool) -> tuple[
         if _mounted_points(disk):
             warnings.append(f"{role}: existing mounted volumes will not be modified")
         return warnings, blockers
-    if disk["removable"] or disk["hotplug"] or disk["transport"] == "usb":
+    for field, label in (("removable", "removable"), ("hotplug", "hotplug"), ("read_only", "read/write")):
+        if not isinstance(disk[field], bool):
+            blockers.append(f"{role}: {label} state could not be verified")
+    if disk["removable"] is True or disk["hotplug"] is True or disk["transport"] == "usb":
         blockers.append(f"{role}: removable/hotplug/USB device; cannot prove it is not installation media")
-    if disk["read_only"]:
+    if disk["read_only"] is True:
         blockers.append(f"{role}: target is read-only")
     if not disk["serial"] and not disk["wwn"]:
         blockers.append(f"{role}: no serial or WWN to support stable hardware identification")
