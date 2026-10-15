@@ -119,6 +119,20 @@ class PlannerTests(unittest.TestCase):
         with self.assertRaises(PlanError):
             build_storage_plan(data, "/dev/nvme0n1")
 
+    def test_malformed_partition_observations_fail_closed(self):
+        cases = [
+            {"mountpoints": {"root": "/"}},
+            {"mountpoints": ["   "]},
+            {"mountpoints": [42]},
+            {"children": {"unexpected": "mapping"}},
+        ]
+        for change in cases:
+            with self.subTest(change=change):
+                data = inventory()
+                data["disks"][0]["children"][0].update(change)
+                with self.assertRaises(PlanError):
+                    build_storage_plan(data, "/dev/nvme0n1")
+
     def test_malformed_disk_entry_blocks_plan(self):
         data = inventory()
         data["disks"].append("not-a-disk-object")
