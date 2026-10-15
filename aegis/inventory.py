@@ -117,11 +117,13 @@ def assess_inventory(observation: dict[str, Any]) -> dict[str, Any]:
                     add("MALFORMED_IDENTITY", "error", "Stable device identifier is blank or contains control characters.",
                         "Resolve device identity ambiguity before planning.")
                     state = "blocked"
-                elif normalized in seen_ids:
-                    add("DUPLICATE_IDENTITY", "error", "Duplicate stable device identifier.",
+                elif normalized in seen_ids and seen_ids[normalized] != (path if isinstance(path, str) else "UNKNOWN"):
+                    add("DUPLICATE_IDENTITY", "error", "Duplicate stable device identifier across devices.",
                         "Resolve device identity ambiguity before planning.")
                     state = "blocked"
                 else:
+                    # A serial and WWN may legitimately have the same text on the
+                    # same device; only cross-device collisions are ambiguous.
                     seen_ids[normalized] = path if isinstance(path, str) else "UNKNOWN"
 
         mountpoints, bad_mountpoints = _meaningful_references(
