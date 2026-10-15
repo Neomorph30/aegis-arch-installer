@@ -70,7 +70,21 @@ The disposable VM remains network-isolated by default (`-nic none`). When a revi
 python -m lab.runtime --run --iso /path/to/archlinux-x86_64.iso --iso-sha256 <trusted-sha256> --network-mode user-nat-explicit
 ```
 
-Use the exact ISO checksum from the official Arch release page and verify the release signature where possible. User-mode NAT allows outbound guest traffic through QEMU's userspace network stack; AEGIS adds no host port-forwarding rules and does not enable bridged networking. This is an opt-in transport setting, not a network allowlist: the guest may reach destinations permitted by QEMU user networking and the host's network policy. Keep credentials and sensitive data out of the lab, and return to the default `disabled` mode when networking is not needed. The current launch smoke still does not prove the ISO booted or that an installation succeeded.
+Use the exact ISO checksum from the official Arch release page and verify the release signature where possible. User-mode NAT allows outbound guest traffic through QEMU's userspace network stack; AEGIS adds no host port-forwarding rules and does not enable bridged networking. This is an opt-in transport setting, not a network allowlist: the guest may reach destinations permitted by QEMU user networking and the host's network policy. Keep credentials and sensitive data out of the lab, and return to the default `disabled` mode when networking is not needed.
+
+## Verified ISO boot-menu observation
+
+For CI and development, the bounded smoke runner also supports a stronger, opt-in observation mode:
+
+```bash
+python -m lab --smoke --observe-boot --seconds 20 \
+  --iso /path/to/archlinux-x86_64.iso \
+  --iso-sha256 <trusted-sha256>
+```
+
+This mode requires Tesseract OCR, binds the QEMU VNC display to loopback, captures a screenshot through the local QMP socket, and looks for both `Arch Linux` and `install medium` in OCR text. It reports `guest_boot_verified=true` only when the expected boot-menu text is detected. The ordinary `--smoke` mode does not make that claim.
+
+Boot-menu detection is a limited milestone, not proof that the kernel or live environment became usable, and not proof that an installation, encryption, recovery, KDE, drivers, or optimization work. The current CI run does not perform installation or mutate anything except disposable virtual-disk files in a private temporary workspace.
 ## Review-only per-phase gate
 
 `lab.execution_gate.assess_phase_request` adds a fail-closed, non-executing gate for one requested phase. It validates the reviewed plan's fixed phase/gate contract, compares fresh synthetic-target observations against the plan digest, checks prior hash-chained journal events, refuses phase retries or unresolved/failed prior phases, and requires a target-bound exact confirmation phrase for mutating phases.
