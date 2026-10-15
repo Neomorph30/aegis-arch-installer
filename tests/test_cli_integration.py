@@ -47,10 +47,22 @@ class CLIIntegrationTests(unittest.TestCase):
         self.assertEqual(p.returncode, 0)
         self.assertIn("Cancelled", p.stdout)
 
-    def test_profile_never_claims_installed(self):
+    def test_profile_never_claims_installed_and_defaults_to_kde(self):
         p = cli("profile", "--inventory", str(FIXTURE))
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertEqual(json.loads(p.stdout)["status"], "RECOMMENDATIONS_ONLY")
+        result = json.loads(p.stdout)
+        self.assertEqual(result["status"], "RECOMMENDATIONS_ONLY")
+        self.assertEqual(result["desktop"]["id"], "kde-plasma")
+
+    def test_profile_rejects_unqualified_desktop(self):
+        p = cli("profile", "--inventory", str(FIXTURE), "--desktop", "gnome")
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("not yet qualified", p.stderr)
+
+    def test_profile_explicit_kde_selection(self):
+        p = cli("profile", "--inventory", str(FIXTURE), "--desktop", "kde-plasma")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(json.loads(p.stdout)["desktop"]["id"], "kde-plasma")
 
     def test_report_rejects_executable_manifest(self):
         with tempfile.TemporaryDirectory() as directory:
