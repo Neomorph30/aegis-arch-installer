@@ -62,7 +62,7 @@ def _readline(prompt: str) -> str | None:
     try:
         return input(prompt)
     except (EOFError, KeyboardInterrupt):
-        print("\\nInput closed or interrupted. Cancelling this step safely.")
+        print("\nInput closed or interrupted. Cancelling this step safely.")
         return None
 
 
