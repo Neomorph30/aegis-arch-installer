@@ -92,3 +92,15 @@ For the next validation step, `--observe-live --live-timeout-seconds 120` waits 
 `lab.execution_gate.assess_phase_request` adds a fail-closed, non-executing gate for one requested phase. It validates the reviewed plan's fixed phase/gate contract, compares fresh synthetic-target observations against the plan digest, checks prior hash-chained journal events, refuses phase retries or unresolved/failed prior phases, and requires a target-bound exact confirmation phrase for mutating phases.
 
 This is still **not an executor**. The function does not write journal records, execute commands, open disks, or authorize a future process cryptographically. A returned `GATE_PASSED_REVIEW_ONLY` means only that the request met these local review checks. A real executor must independently re-probe immediately before each mutation, persist durable intent before the operation, use a fixed command/argument allowlist without a shell, verify results, and stop on ambiguity. The current preview safety lint remains a guardrail, not a sandbox or proof of safety.
+
+## Journaled guest review session
+
+The read-only guest session now connects the guest probe, deterministic review plan, per-phase review gate, and transaction journal:
+
+```bash
+python -m lab.guest_review_session
+```
+
+Run only inside the Arch live environment as root. The command creates a private, unique session under `/run/aegis`, records preflight intent and outcome, re-probes target identity, and displays the proposed layout. It then requires the exact target-bound confirmation phrase before recording `explicit_target_review`. The command accepts no target path or journal path from arguments.
+
+This session is deliberately incapable of partitioning, formatting, opening LUKS, mounting filesystems, installing packages, or writing boot configuration. Both successful phase results still report `execution_enabled=false` and `disk_changes_performed=false`. A failed or interrupted session must not be reused; preserve its journal and start a fresh live session after reviewing the failure. This is a safety integration milestone, not the installation engine.
