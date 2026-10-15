@@ -64,7 +64,7 @@ class GuestReviewSessionTests(unittest.TestCase):
         first = sample()
         changed = sample()
         changed["devices"][0]["serial"] = "WRONG"
-        values = iter([first, first, changed])
+        values = iter([first, changed])
         result = run_review_session(self.journal, probe=lambda: copy.deepcopy(next(values)),
                                     confirm=lambda plan, phrase: phrase)
         self.assertEqual(result["status"], "BLOCKED")
