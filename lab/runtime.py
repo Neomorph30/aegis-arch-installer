@@ -138,6 +138,10 @@ def prepare_workspace(workspace: Path, config: LabConfig, firmware: tuple[Path, 
     config.validate()
     if not workspace.is_dir() or workspace.is_symlink() or (workspace.stat().st_mode & 0o077):
         raise LabError("Refusing non-private workspace")
+    if iso is not None and iso_sha256 is None:
+        raise LabError("An ISO requires an independently supplied --iso-sha256 digest")
+    if iso is None and iso_sha256 is not None:
+        raise LabError("An ISO digest was supplied without an ISO path")
     p = workspace / "primary.raw"
     s = workspace / "secondary.raw"
     _exclusive_sparse_file(p, config.primary_bytes)
@@ -157,8 +161,6 @@ def prepare_workspace(workspace: Path, config: LabConfig, firmware: tuple[Path, 
         except ISOValidationError as exc:
             raise LabError(f"Installer ISO verification failed: {exc}") from exc
         result["iso"] = dst
-    elif iso_sha256 is not None:
-        raise LabError("An ISO digest was supplied without an ISO path")
     return result
 
 
