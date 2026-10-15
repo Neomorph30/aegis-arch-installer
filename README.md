@@ -25,7 +25,7 @@ reviewed and tested installation executor is ever introduced.
 - Builds advisory workstation/gaming package profiles without installing packages
   or assuming a detected GPU has compatible drivers. KDE Plasma is the initial
   default desktop candidate; unqualified alternatives are rejected, and all
-  package lists remain recommendations rather than executed install commands.
+  package lists remain recommendations rather than executed install commands. The profile CLI accepts explicit desktop identifiers, but GNOME, Xfce and custom desktops fail closed until qualified.
 - Produces 0600 JSON proposals and sanitized HTML planning reports that never
   claim a real security operation passed.
 - Provides a **fictional hardware fixture** so the CLI and wizard can be tested
@@ -57,7 +57,8 @@ python tools/security_lint.py
 python -m aegis menu --inventory fixtures/desktop-example.json  # interactive start screen
 python -m aegis inspect --inventory fixtures/desktop-example.json
 python -m aegis wizard --inventory fixtures/desktop-example.json
-python -m aegis profile --inventory fixtures/desktop-example.json
+python -m aegis profile --inventory fixtures/desktop-example.json  # KDE Plasma default
+python -m aegis profile --inventory fixtures/desktop-example.json --desktop kde-plasma
 python -m aegis plan --inventory fixtures/desktop-example.json \
   --primary /dev/nvme0n1 --secondary /dev/sda --output proposal.json
 python -m aegis report --plan proposal.json --output proposal.html
