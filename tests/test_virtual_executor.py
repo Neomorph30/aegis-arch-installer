@@ -98,7 +98,7 @@ class VirtualExecutionBoundaryTests(unittest.TestCase):
         self.assertEqual(journal.read_text(), "preserve evidence")
 
     def test_blocked_plan_cannot_be_simulated(self):
-        blocked = build_storage_plan(copy.deepcopy(FIXTURE), "/dev/sdb")
+        fixture = copy.deepcopy(FIXTURE)\n        fixture["disks"][2]["size"] = 128 * 1024**3\n        blocked = build_storage_plan(fixture, "/dev/sdb")
         with self.assertRaisesRegex(VirtualExecutionError, "Blocked"):
             simulate_execution(blocked, workspace=self.root,
                 virtual_targets={"/dev/sdb": self.image},
