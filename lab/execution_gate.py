@@ -110,7 +110,7 @@ def assess_phase_request(
         for prior in PHASE_ORDER[:index]:
             if results.get(prior, {}).get("status") != "SUCCEEDED":
                 raise PhaseGateError(f"Required earlier phase {prior} has not been verified successful")
-        if phase_id in MUTATING_PHASES:
+        if "human_confirmation" in REQUIRED_GATES[phase_id]:
             required_phrase = confirmation_phrase(target)
             if not isinstance(operator_confirmation, str) or operator_confirmation != required_phrase:
                 raise PhaseGateError("Exact target-bound operator confirmation is required")
