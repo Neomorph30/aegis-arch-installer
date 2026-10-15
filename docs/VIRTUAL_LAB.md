@@ -22,7 +22,7 @@ python -m lab --run --iso /path/to/verified-arch.iso
 ## How the launcher protects the host
 
 - Refuses to run as root. Creates only a process-owned private directory with an unpredictable name under `/tmp`, and deletes it after exit or failure.
-- Creates **two new sparse regular files** as the only guest disks (24 GiB + 8 GiB), using exclusive creation without following symlinks. No API accepts a host disk path, partition path, `-drive` arguments or QEMU device passthrough.
+- Creates **two new sparse regular files** as the only guest disks (24 GiB + 8 GiB), using exclusive creation without following symlinks. The primary and secondary expose fixed lab-only serial markers; the secondary disk is attached read-only for the Layer 07 preflight. No API accepts a host disk path, partition path, `-drive` arguments or QEMU device passthrough.
 - Copies the firmware *variable template* and optional ISO into the private directory; firmware CODE is mounted read-only. Firmware files must be a supported matching pair of regular files. No firmware keys are enrolled or modified on the host.
 - Software TPM uses only a private Unix socket and private per-run state directory.
 - QEMU runs in portable TCG mode without KVM, host networking, bridged interfaces, host directory sharing, host USB passthrough or VM file sharing. QMP is local to the private workspace.

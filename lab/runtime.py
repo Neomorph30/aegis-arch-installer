@@ -177,10 +177,10 @@ def command_lines(config: LabConfig, firmware: tuple[Path, Path], prepared: dict
             "-drive", f"if=pflash,format=raw,file={prepared['vars']}",
             "-blockdev", f"driver=file,node-name=primary_file,filename={prepared['primary']}",
             "-blockdev", "driver=raw,node-name=primary,file=primary_file",
-            "-device", "virtio-blk-pci,drive=primary",
-            "-blockdev", f"driver=file,node-name=secondary_file,filename={prepared['secondary']}",
-            "-blockdev", "driver=raw,node-name=secondary,file=secondary_file",
-            "-device", "virtio-blk-pci,drive=secondary",
+            "-device", "virtio-blk-pci,drive=primary,serial=AEGIS-LAB-PRIMARY",
+            "-blockdev", f"driver=file,node-name=secondary_file,filename={prepared['secondary']},read-only=on",
+            "-blockdev", "driver=raw,node-name=secondary,file=secondary_file,read-only=on",
+            "-device", "virtio-blk-pci,drive=secondary,serial=AEGIS-LAB-SECONDARY",
             "-chardev", f"socket,id=chrtpm,path={prepared['tpm_sock']}",
             "-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
             "-device", "tpm-tis,tpmdev=tpm0"]
@@ -293,6 +293,22 @@ def launch(config: LabConfig, iso: Path | None = None, *, smoke: bool = True,
                 rc = vm_proc.wait()
                 return {"status": "VM_EXITED", "exit_code": rc, "guest_boot_verified": False,
                         "installation_performed": False, "guest_network_enabled": False}
+        except (LabError, OSError) as exc:
+            # Preserve bounded emulator diagnostics before TemporaryDirectory cleanup.
+            # These logs contain emulator errors, not credentials or user secrets.
+            details = []
+            for name in ("qemu.stderr", "tpm.stderr"):
+                try:
+                    detail = (folder / name).read_text(encoding="utf-8", errors="replace").strip()
+                except OSError:
+                    continue
+                if detail:
+                    details.append(f"{name}: {detail[-1200:]}")
+            if details:
+                raise LabError(f"{exc}; emulator diagnostics: {' | '.join(details)}") from exc
+            if isinstance(exc, LabError):
+                raise
+            raise LabError(f"Virtual lab launch failed: {exc}") from exc
         finally:
             _finish(vm_proc)
             _finish(tpm_proc)
