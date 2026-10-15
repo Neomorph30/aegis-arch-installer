@@ -57,6 +57,7 @@ python tools/security_lint.py
 python -m aegis menu --inventory fixtures/desktop-example.json  # interactive start screen
 python -m aegis inspect --inventory fixtures/desktop-example.json
 python -m aegis assess --inventory fixtures/block-device-observation-example.json
+python -m aegis assess --live  # Read-only live block-device/holder/swap assessment
 python -m aegis wizard --inventory fixtures/desktop-example.json
 python -m aegis profile --inventory fixtures/desktop-example.json  # KDE Plasma default
 python -m aegis profile --inventory fixtures/desktop-example.json --desktop kde-plasma
@@ -70,7 +71,10 @@ The fixtures contain **entirely fictional hardware**. `/dev/nvme0n1` above
 refers only to its example JSON entry. The `assess` command accepts a separate
 structured observation fixture with a top-level `devices` list; it reports
 `blocked` for incomplete or unsafe observations and never authorizes writes.
-It does not probe live hardware and is not yet wired into the live planner.
+The fixture mode does not probe live hardware. The separate `--live` mode
+uses read-only `lsblk`, sysfs holder entries and `/proc/swaps` observations;
+unavailable safety observations block assessment. Neither mode is yet wired into
+the storage planner, and neither authorizes writes.
 No partition or filesystem operations exist in this version.
 
 For a live, **read-only** inventory on Linux:
