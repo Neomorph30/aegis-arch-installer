@@ -16,6 +16,12 @@ def inventory():
 
 
 class PlannerTests(unittest.TestCase):
+    def test_malformed_option_types_raise_plan_error_not_type_error(self):
+        for kwargs in ({"secondary_action": []}, {"filesystem": {}}):
+            with self.subTest(kwargs=kwargs):
+                with self.assertRaises(PlanError):
+                    build_storage_plan(inventory(), "/dev/nvme0n1", **kwargs)
+
     def test_secondary_preserved_by_default(self):
         plan = build_storage_plan(inventory(), "/dev/nvme0n1", "/dev/sdb")
         self.assertFalse(plan["execution_enabled"])
