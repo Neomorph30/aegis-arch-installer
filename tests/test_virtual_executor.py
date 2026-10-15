@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import copy
 import json
-import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -98,11 +97,17 @@ class VirtualExecutionBoundaryTests(unittest.TestCase):
         self.assertEqual(journal.read_text(), "preserve evidence")
 
     def test_blocked_plan_cannot_be_simulated(self):
-        fixture = copy.deepcopy(FIXTURE)\n        fixture["disks"][2]["size"] = 128 * 1024**3\n        blocked = build_storage_plan(fixture, "/dev/sdb")
+        fixture = copy.deepcopy(FIXTURE)
+        fixture["disks"][2]["size"] = 128 * 1024**3
+        blocked = build_storage_plan(fixture, "/dev/sdb")
         with self.assertRaisesRegex(VirtualExecutionError, "Blocked"):
-            simulate_execution(blocked, workspace=self.root,
+            simulate_execution(
+                blocked,
+                workspace=self.root,
                 virtual_targets={"/dev/sdb": self.image},
-                approved_identities={"/dev/sdb": {"serial": "EXAMPLE-USB-0003"}})
+                approved_identities={"/dev/sdb": {"serial": "EXAMPLE-USB-0003"}},
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
