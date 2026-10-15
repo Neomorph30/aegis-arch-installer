@@ -57,7 +57,8 @@ def _normalize(node: Any, sys_root: Path, swaps: set[str]) -> dict[str, Any]:
     try:
         holders = sorted(item.name for item in holders_dir.iterdir())
     except OSError:
-        holders = []
+        # Unknown is not equivalent to empty; the spec rejects this sentinel.
+        holders = ["UNVERIFIED"]
     normalized = {
         "path": path,
         "type": node.get("type"),
@@ -90,7 +91,10 @@ def observe_guest(
         raise GuestProbeError("lsblk output has an unexpected schema")
 
     swaps: set[str] = set()
-    swap_text = _read(proc_path / "swaps")
+    try:
+        swap_text = (proc_path / "swaps").read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise GuestProbeError("Cannot verify active swap state; do not continue installation") from exc
     for line in swap_text.splitlines()[1:]:
         fields = line.split()
         if fields:
@@ -107,8 +111,9 @@ def observe_guest(
     try:
         interfaces = {entry.name for entry in net_dir.iterdir()}
     except OSError:
-        interfaces = set()
-    network_mode = "disabled" if not (interfaces - {"lo"}) else "unverified"
+        interfaces = None
+    network_mode = ("unverified" if interfaces is None or interfaces - {"lo"}
+                    else "disabled")
 
     return {
         "environment": {
