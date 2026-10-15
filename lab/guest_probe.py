@@ -80,6 +80,54 @@ def _normalize(node: Any, sys_root: Path, swaps: set[str]) -> dict[str, Any]:
     return normalized
 
 
+def _network_mode(sys_path: Path, run: Callable[..., Any]) -> str:
+    """Recognize only the fixed QEMU user-NAT address/route; unknown networks block preflight."""
+    try:
+        interfaces = {entry.name for entry in (sys_path / "class" / "net").iterdir()}
+    except OSError:
+        return "unverified"
+    external = interfaces - {"lo"}
+    if not external:
+        return "disabled"
+    if len(external) != 1:
+        return "unverified"
+    interface = next(iter(external))
+    try:
+        address_result = run(
+            ["ip", "-json", "-4", "address", "show", "dev", interface],
+            check=True, capture_output=True, text=True, timeout=5,
+        )
+        route_result = run(
+            ["ip", "-json", "route", "show", "default", "dev", interface],
+            check=True, capture_output=True, text=True, timeout=5,
+        )
+        addresses = json.loads(address_result.stdout)
+        routes = json.loads(route_result.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError, TypeError, AttributeError):
+        return "unverified"
+    address_ok = (
+        isinstance(addresses, list)
+        and any(
+            isinstance(item, dict) and item.get("ifname") == interface
+            and any(
+                isinstance(addr, dict) and addr.get("family") == "inet"
+                and addr.get("local") == "10.0.2.15" and addr.get("prefixlen") == 24
+                for addr in item.get("addr_info", [])
+            )
+            for item in addresses
+        )
+    )
+    route_ok = (
+        isinstance(routes, list)
+        and any(
+            isinstance(route, dict) and route.get("dst") == "default"
+            and route.get("gateway") == "10.0.2.2" and route.get("dev") == interface
+            for route in routes
+        )
+    )
+    return "user-nat-explicit" if address_ok and route_ok else "unverified"
+
+
 def observe_guest(
     *,
     sys_root: str | Path = "/sys",
@@ -113,13 +161,7 @@ def observe_guest(
         if node.get("type") in ("disk", "rom"):
             devices.append(_normalize(node, sys_path, swaps))
 
-    net_dir = sys_path / "class" / "net"
-    try:
-        interfaces = {entry.name for entry in net_dir.iterdir()}
-    except OSError:
-        interfaces = None
-    network_mode = ("unverified" if interfaces is None or interfaces - {"lo"}
-                    else "disabled")
+    network_mode = _network_mode(sys_path, run)
 
     return {
         "environment": {
@@ -131,6 +173,7 @@ def observe_guest(
         "devices": devices,
         "observation_notes": [
             "Read-only guest observation; not a cryptographic attestation of virtualization.",
+            "user-nat-explicit is recognized only from the conventional QEMU user-NAT IPv4 address and default route; this is not network attestation.",
             "A future executor must independently re-probe identity immediately before each mutation.",
         ],
     }
