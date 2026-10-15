@@ -126,7 +126,11 @@ def interactive_preflight(*, offer_setup: bool = True) -> dict[str, object]:
     if setup_tool() is None:
         print("No supported Wi-Fi manager found. The Arch ISO normally includes iwctl.")
         return result
-    consent = input("Open interactive Wi-Fi setup now? [y/N]: ").strip().lower()
+    try:
+        consent = input("Open interactive Wi-Fi setup now? [y/N]: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print("\\nInput closed or interrupted. Network settings unchanged.")
+        return result
     if consent not in ("y", "yes"):
         print("Network settings unchanged.")
         return result
