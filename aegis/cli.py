@@ -57,21 +57,35 @@ def _inventory(filename: str | None) -> dict[str, Any]:
     return _load_json(filename) if filename else inspect()
 
 
-def _choose(prompt: str, max_index: int) -> int | None:
-    entry = input(prompt).strip()
-    if not entry:
+def _choose(prompt: str, max_index: int, *, attempts: int = 3) -> int | None:
+    """Bounded input recovery; Enter cancels, invalid input never changes state."""
+    if max_index < 1:
         return None
-    try:
-        number = int(entry)
-    except ValueError as exc:
-        raise ValueError("Please enter a numeric choice") from exc
-    if number < 1 or number > max_index:
-        raise ValueError("Choice is outside the displayed range")
-    return number - 1
+    for attempt in range(attempts):
+        entry = input(prompt).strip()
+        if not entry:
+            return None
+        try:
+            number = int(entry)
+        except ValueError:
+            print("Please enter a number from the displayed list, or press Enter to cancel.")
+        else:
+            if 1 <= number <= max_index:
+                return number - 1
+            print(f"Choose a number between 1 and {max_index}, or press Enter to cancel.")
+        if attempt + 1 < attempts:
+            print(f"Try again ({attempts - attempt - 1} attempt(s) remaining).")
+    print("Input retry limit reached. Cancelling this step safely.")
+    return None
 
 
 def wizard(inventory_file: str | None = None) -> int:
-    data = _inventory(inventory_file)
+    try:
+        data = _inventory(inventory_file)
+    except (HardwareInspectionError, OSError, ValueError, KeyError, TypeError) as exc:
+        print(f"Hardware inventory unavailable: {exc}", file=sys.stderr)
+        print("Recovery: verify the inventory source and retry. No changes made.")
+        return 2
     print("\nAEGIS — NON-DESTRUCTIVE DEVELOPER PREVIEW\nNo disk changes will occur.\n")
     print(f"CPU: {data.get('cpu')} | RAM: {data.get('ram_mib')} MiB | UEFI: {data.get('uefi_detected')}")
     print(f"TPM: {data.get('tpm_version', 'unknown')} (enrollment not tested)")
@@ -83,7 +97,11 @@ def wizard(inventory_file: str | None = None) -> int:
     if primary_index is None:
         print("Cancelled. No changes made.")
         return 0
-    primary = disks[primary_index]["path"]
+    selected_primary = disks[primary_index]
+    primary = selected_primary.get("path") if isinstance(selected_primary, dict) else None
+    if not isinstance(primary, str) or not primary.startswith("/dev/"):
+        print("Selected device has no valid /dev path. Cancelling safely; refresh inventory.")
+        return 2
     remaining = [d for i, d in enumerate(disks) if i != primary_index]
     secondary = None
     secondary_action = "preserve"
@@ -92,18 +110,23 @@ def wizard(inventory_file: str | None = None) -> int:
         _print_devices(remaining)
         second_index = _choose("Secondary disk number (Enter = none): ", len(remaining))
         if second_index is not None:
-            secondary = remaining[second_index]["path"]
+            selected_secondary = remaining[second_index]
+            secondary = selected_secondary.get("path") if isinstance(selected_secondary, dict) else None
+            if not isinstance(secondary, str) or not secondary.startswith("/dev/"):
+                print("Selected secondary device has no valid /dev path. Cancelling safely.")
+                return 2
             print("Secondary action: 1) preserve [default], 2) unlock existing LUKS, 3) propose erase")
-            action_choice = input("Action number: ").strip() or "1"
             actions = {"1": "preserve", "2": "unlock-existing", "3": "erase"}
-            if action_choice not in actions:
-                raise ValueError("Invalid secondary action")
-            secondary_action = actions[action_choice]
-    fs_choice = input("Root filesystem: 1) Btrfs [default], 2) ext4: ").strip() or "1"
-    if fs_choice not in ("1", "2"):
-        raise ValueError("Invalid filesystem choice")
-    filesystem = {"1": "btrfs", "2": "ext4"}[fs_choice]
-    plan = build_storage_plan(data, primary, secondary, secondary_action, filesystem=filesystem)
+            action_index = _choose("Action number [1-3, Enter = preserve]: ", 3)
+            secondary_action = actions[str((action_index if action_index is not None else 0) + 1)]
+    fs_index = _choose("Root filesystem: 1) Btrfs [default], 2) ext4: ", 2)
+    filesystem = "btrfs" if fs_index is None or fs_index == 0 else "ext4"
+    try:
+        plan = build_storage_plan(data, primary, secondary, secondary_action, filesystem=filesystem)
+    except (PlanError, KeyError, TypeError, ValueError) as exc:
+        print(f"Cannot create a safe proposal: {exc}", file=sys.stderr)
+        print("Recovery: refresh inventory, resolve blockers, and start a new proposal.")
+        return 2
     print("\n===== PROPOSED ACTIONS (NO DISK WRITES) =====")
     for action in plan["actions"]:
         print(f"{action['target']}: {action['action'].upper()} — "
