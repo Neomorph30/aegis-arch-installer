@@ -7,6 +7,8 @@ re-identify every device and check it is not in use immediately before any write
 from __future__ import annotations
 
 import json
+import os
+import stat
 from pathlib import Path
 import platform
 import shutil
@@ -61,57 +63,70 @@ def read_disks() -> list[dict[str, Any]]:
             if isinstance(d, dict) and d.get("type") == "disk"]
 
 
-def _active_swap_paths() -> set[str] | None:
-    """Read active swap device paths; None means state could not be verified."""
+def _active_swap_devices() -> set[tuple[int, int]] | None:
+    """Read active swap block-device major/minor IDs; None means state is unknown."""
     try:
         lines = Path("/proc/swaps").read_text(encoding="utf-8").splitlines()
     except OSError:
         return None
-    paths: set[str] = set()
+    devices: set[tuple[int, int]] = set()
     for line in lines[1:]:
         fields = line.split()
         if not fields:
             continue
         try:
-            paths.add(str(Path(fields[0]).resolve(strict=False)))
-        except (OSError, RuntimeError):
-            paths.add(fields[0])
-    return paths
+            info = os.stat(fields[0])
+        except OSError:
+            # Swap files are not block devices; they cannot match an lsblk node.
+            continue
+        if stat.S_ISBLK(info.st_mode):
+            devices.add((os.major(info.st_rdev), os.minor(info.st_rdev)))
+    return devices
 
 
-def _enrich_block_node(node: dict[str, Any], swap_paths: set[str] | None) -> None:
+def _sysfs_block_node(path: str) -> Path:
+    """Resolve a device alias through its kernel major/minor identity, not basename."""
+    info = os.stat(path)
+    if not stat.S_ISBLK(info.st_mode):
+        raise OSError("observed path is not a block device")
+    major, minor = os.major(info.st_rdev), os.minor(info.st_rdev)
+    return Path("/sys/dev/block") / f"{major}:{minor}"
+
+
+def _enrich_block_node(node: dict[str, Any], swap_devices: set[tuple[int, int]] | None) -> None:
     """Attach explicit holder and swap observations to every lsblk tree node."""
     path = node.get("path")
-    name = Path(path).name if isinstance(path, str) else ""
-    holder_dir = Path("/sys/class/block") / name / "holders"
-    try:
-        node["holders"] = sorted(entry.name for entry in holder_dir.iterdir())
-    except OSError:
-        # Unknown is deliberately not represented as an empty holder list.
+    device_id: tuple[int, int] | None = None
+    if isinstance(path, str):
+        try:
+            sysfs_node = _sysfs_block_node(path)
+            info = os.stat(path)
+            device_id = (os.major(info.st_rdev), os.minor(info.st_rdev))
+            node["holders"] = sorted(entry.name for entry in (sysfs_node / "holders").iterdir())
+        except OSError:
+            # Unknown is deliberately not represented as an empty holder list.
+            node["holders"] = None
+    else:
         node["holders"] = None
-    if swap_paths is None or not isinstance(path, str):
+    if swap_devices is None or device_id is None:
         node["active_swap"] = None
     else:
-        try:
-            resolved = str(Path(path).resolve(strict=False))
-        except (OSError, RuntimeError):
-            resolved = path
-        node["active_swap"] = resolved in swap_paths
+        node["active_swap"] = device_id in swap_devices
     # Identity collisions are checked by the assessor across the complete tree.
     node["ambiguous"] = False
     children = node.get("children")
     if isinstance(children, list):
         for child in children:
             if isinstance(child, dict):
-                _enrich_block_node(child, swap_paths)
+                _enrich_block_node(child, swap_devices)
 
 
 def read_assessment_observation() -> dict[str, Any]:
     """Build a live, read-only observation for the conservative inventory assessor."""
     disks = read_disks()
-    swap_paths = _active_swap_paths()
+    swap_devices = _active_swap_devices()
     for disk in disks:
-        _enrich_block_node(disk, swap_paths)
+        _enrich_block_node(disk, swap_devices)
     return {"devices": disks}
 
 
