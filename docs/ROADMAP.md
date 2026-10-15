@@ -23,7 +23,8 @@
 - [ ] Three-kernel boot/update and NVIDIA module-signing validation
 
 ## Phase 3: workstation and game-ready profiles (NOT IMPLEMENTED)
-- [ ] KDE Plasma, standard/Zen/LTS kernels, proven GPU support
+- [ ] KDE Plasma as the first supported desktop; other desktops remain disabled until independently qualified
+- [ ] Standard/Zen/LTS kernels, proven GPU support
 - [ ] Steam/Proton and optional VR on qualified headsets
 - [ ] Fingerprint/face support only when independently tested
 
@@ -35,6 +36,7 @@
 ## Phase 5: public 1.0 (NOT IMPLEMENTED)
 - [ ] Signed custom ArchISO and trusted update/verification process
 - [ ] Reversible, measured optimization engine; no unsafe performance claims
+- [ ] Desktop-independent core security policy and hardware/workload-based optimization
 - [ ] Independent security audit, hardware matrix, tested recovery path
 
 ## Layer 01 — assurance and security quality baseline
