@@ -177,10 +177,10 @@ def command_lines(config: LabConfig, firmware: tuple[Path, Path], prepared: dict
             "-drive", f"if=pflash,format=raw,file={prepared['vars']}",
             "-blockdev", f"driver=file,node-name=primary_file,filename={prepared['primary']}",
             "-blockdev", "driver=raw,node-name=primary,file=primary_file",
-            "-device", "virtio-blk-pci,drive=primary",
-            "-blockdev", f"driver=file,node-name=secondary_file,filename={prepared['secondary']}",
+            "-device", "virtio-blk-pci,drive=primary,serial=AEGIS-LAB-PRIMARY",
+            "-blockdev", f"driver=file,node-name=secondary_file,filename={prepared['secondary']},read-only=on",
             "-blockdev", "driver=raw,node-name=secondary,file=secondary_file",
-            "-device", "virtio-blk-pci,drive=secondary",
+            "-device", "virtio-blk-pci,drive=secondary,serial=AEGIS-LAB-SECONDARY",
             "-chardev", f"socket,id=chrtpm,path={prepared['tpm_sock']}",
             "-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
             "-device", "tpm-tis,tpmdev=tpm0"]
