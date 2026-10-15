@@ -130,6 +130,24 @@ class PlannerTests(unittest.TestCase):
         with self.assertRaises(PlanError):
             build_storage_plan(data, "/dev/nvme0n1")
 
+    def test_missing_disk_or_nested_child_topology_fails_closed(self):
+        cases = [
+            ("disk", None),
+            ("child", None),
+            ("grandchild", None),
+        ]
+        for target, _ in cases:
+            with self.subTest(target=target):
+                data = inventory()
+                if target == "disk":
+                    data["disks"][0].pop("children")
+                elif target == "child":
+                    data["disks"][0]["children"][0].pop("children")
+                else:
+                    data["disks"][0]["children"][0]["children"] = [{"path": "/dev/nvme0n1p2", "mountpoints": []}]
+                with self.assertRaises(PlanError):
+                    build_storage_plan(data, "/dev/nvme0n1")
+
     def test_malformed_partition_observations_fail_closed(self):
         cases = [
             {"mountpoints": {"root": "/"}},
