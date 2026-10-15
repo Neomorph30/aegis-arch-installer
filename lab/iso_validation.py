@@ -1,11 +1,14 @@
 """Strict, read-only integrity check for a local Arch Linux ISO."""
 from __future__ import annotations
 
+import argparse
 import hashlib
+import json
 import hmac
 import re
 import stat
 from pathlib import Path
+import sys
 
 
 class ISOValidationError(ValueError):
@@ -69,3 +72,35 @@ def verify_arch_iso(
         return {"verified": True, "size_bytes": total, "sha256": actual, "volume_label": label}
     finally:
         os.close(raw_fd)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Verify an ISO locally and emit machine-readable evidence; never writes files."""
+    parser = argparse.ArgumentParser(description="Verify a local Arch ISO before using the AEGIS virtual lab")
+    parser.add_argument("--iso", required=True, type=Path, help="local ISO image path")
+    parser.add_argument("--sha256", required=True, help="expected SHA-256 from an independently trusted source")
+    args = parser.parse_args(argv)
+    try:
+        result = verify_arch_iso(args.iso, args.sha256)
+    except (ISOValidationError, OSError, TypeError, ValueError) as exc:
+        print(json.dumps({
+            "schema_version": 1,
+            "status": "BLOCKED",
+            "verified": False,
+            "error": str(exc),
+            "recovery": "Obtain the ISO and expected digest from an independently trusted official source, then retry.",
+        }, indent=2, sort_keys=True))
+        print("AEGIS ISO verification failed; do not boot this image.", file=sys.stderr)
+        return 2
+    print(json.dumps({
+        "schema_version": 1,
+        "status": "VERIFIED_ARCH_ISO",
+        "execution_enabled": False,
+        **result,
+        "trust_note": "Digest equality does not establish trust if the expected digest source is untrusted.",
+    }, indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
