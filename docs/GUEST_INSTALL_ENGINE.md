@@ -4,6 +4,16 @@
 
 The existing QEMU lab proves that QEMU, paired OVMF firmware, and a software TPM can start together. It does not prove that the Arch ISO boots or that an installed guest can boot. Layer 07 must close that gap using disposable virtual disks only.
 
+## Offline ISO verification
+
+Verify a local ISO independently before starting the VM lab:
+
+```bash
+python -m lab.iso_validation --iso /path/to/archlinux-x86_64.iso --sha256 <trusted-64-character-sha256>
+```
+
+The command is read-only and emits JSON with either `VERIFIED_ARCH_ISO` or `BLOCKED`. Obtain the expected digest from an independently trusted official Arch Linux source; a digest copied from an untrusted mirror or message does not establish provenance. The lab repeats verification on the private copy before QEMU receives the image.
+
 ## Required environment
 
 - Launch from the unprivileged host-side lab. Never run the guest installer directly on the host.
