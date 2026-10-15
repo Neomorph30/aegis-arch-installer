@@ -12,6 +12,7 @@ import hmac
 import json
 import os
 from pathlib import Path
+import re
 import stat
 from typing import Any
 
@@ -48,6 +49,9 @@ RECOVERY_STATUSES = {
     "RESTART_READ_ONLY_PREFLIGHT",
     "RECREATE_EPHEMERAL_VM_AFTER_EVIDENCE_CAPTURE",
 }
+MAX_JOURNAL_BYTES = 1024 * 1024
+MAX_RECORD_BYTES = 4096
+HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 EVENT_KEYS = {
     "sequence", "timestamp", "event_type", "phase", "status",
     "note_code", "exit_code", "previous_hash", "event_hash",
@@ -66,10 +70,20 @@ def _event_hash(record: dict[str, Any]) -> str:
 def _validate_event(event: dict[str, Any], sequence: int, previous_hash: str) -> None:
     if set(event) != EVENT_KEYS:
         raise JournalError("Journal record schema mismatch; preserve the journal for review")
-    if event.get("sequence") != sequence or event.get("previous_hash") != previous_hash:
-        raise JournalError("Journal sequence or hash chain mismatch; do not resume")
+    actual_sequence = event.get("sequence")
+    if isinstance(actual_sequence, bool) or not isinstance(actual_sequence, int) or actual_sequence != sequence:
+        raise JournalError("Journal sequence mismatch; do not resume")
+    recorded_previous = event.get("previous_hash")
+    if not isinstance(recorded_previous, str) or not HASH_PATTERN.fullmatch(recorded_previous) or recorded_previous != previous_hash:
+        raise JournalError("Journal hash chain mismatch; do not resume")
     if not isinstance(event.get("timestamp"), str) or len(event["timestamp"]) > 40:
         raise JournalError("Journal timestamp is malformed")
+    try:
+        datetime.fromisoformat(event["timestamp"])
+    except ValueError as exc:
+        raise JournalError("Journal timestamp is malformed") from exc
+    if not isinstance(event.get("event_hash"), str) or not HASH_PATTERN.fullmatch(event["event_hash"]):
+        raise JournalError("Journal event hash is malformed")
     if event.get("event_type") not in EVENT_TYPES:
         raise JournalError("Journal event type is not allowlisted")
     if event.get("note_code") not in NOTE_CODES:
@@ -95,8 +109,12 @@ def _validate_event(event: dict[str, Any], sequence: int, previous_hash: str) ->
 def parse_journal(raw: bytes) -> list[dict[str, Any]]:
     if not raw:
         return []
+    if len(raw) > MAX_JOURNAL_BYTES:
+        raise JournalError("Journal exceeds the supported evidence size; preserve it for offline review")
     if not raw.endswith(b"\n"):
         raise JournalError("Journal ends with an incomplete record; preserve evidence")
+    if any(len(line) > MAX_RECORD_BYTES for line in raw.splitlines()):
+        raise JournalError("Journal record exceeds the supported size; preserve evidence")
     events: list[dict[str, Any]] = []
     previous = "0" * 64
     for index, line in enumerate(raw.splitlines()):
