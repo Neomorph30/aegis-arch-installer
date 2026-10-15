@@ -7,7 +7,7 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(assess_inventory({})["status"], "blocked")
     def test_mounted_device_not_safe(self):
         r=assess_inventory({"devices":[{"path":"/dev/sda","type":"disk","mountpoints":["/"]}]})
-        self.assertEqual(r["status"], "review_required")
+        self.assertEqual(r["status"], "blocked")
         self.assertEqual(r["devices"][0]["state"], "blocked")
         self.assertFalse(r["write_authorized"])
     def test_duplicate_path_blocked(self):
