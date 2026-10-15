@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from lab.runtime import LabConfig, LabError, prepare_workspace
+from lab.runtime import LabConfig, LabError, command_lines, prepare_workspace
 
 
 class LabISOIntegrationTests(unittest.TestCase):
@@ -47,9 +47,7 @@ class LabISOIntegrationTests(unittest.TestCase):
         with patch("lab.runtime.verify_arch_iso", return_value={"verified": True}):
             prepared = prepare_workspace(self.workspace, LabConfig(), self.firmware,
                                          self.iso, iso_sha256="c" * 64)
-        _, qemu = __import__("lab.runtime", fromlist=["command_lines"]).command_lines(
-            LabConfig(), self.firmware, prepared
-        )
+        _, qemu = command_lines(LabConfig(), self.firmware, prepared)
         boot_index = qemu.index("-boot")
         self.assertEqual(qemu[boot_index + 1], "order=d")
         self.assertIn("readonly=on", qemu[qemu.index("-drive", boot_index):][1])
