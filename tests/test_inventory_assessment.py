@@ -59,6 +59,14 @@ class InventoryAssessmentTests(unittest.TestCase):
         result = assess(disk(serial="SAME", wwn="SAME"))
         self.assertEqual(result["status"], "review_required")
 
+    def test_child_repeating_parent_identifiers_does_not_fake_disk_collision(self):
+        child = {"path": "/dev/nvme0n1p1", "type": "part", "serial": "SERIAL-A",
+                 "wwn": "WWN-A", "mountpoints": [None], "holders": [],
+                 "active_swap": False, "ambiguous": False, "children": []}
+        result = assess(disk(children=[child]))
+        self.assertEqual(result["status"], "review_required")
+        self.assertFalse(any(f["code"] == "DUPLICATE_IDENTITY" for f in result["findings"]))
+
     def test_missing_stable_identity_blocks_physical_disk(self):
         result = assess(disk(serial=None, wwn=None))
         self.assertEqual(result["status"], "blocked")
