@@ -85,6 +85,8 @@ python -m lab --smoke --observe-boot --seconds 20 \
 This mode requires Tesseract OCR, binds the QEMU VNC display to loopback, captures a screenshot through the local QMP socket, and looks for both `Arch Linux` and `install medium` in OCR text. It reports `guest_boot_verified=true` only when the expected boot-menu text is detected. The ordinary `--smoke` mode does not make that claim.
 
 Boot-menu detection is a limited milestone, not proof that the kernel or live environment became usable, and not proof that an installation, encryption, recovery, KDE, drivers, or optimization work. The current CI run does not perform installation or mutate anything except disposable virtual-disk files in a private temporary workspace.
+
+For the next validation step, `--observe-live --live-timeout-seconds 120` waits for an OCR match containing both `archiso` and `root`, consistent with the Arch live environment's root prompt. It is separate from `--observe-boot`; the two modes cannot be combined. The timeout is bounded to 30–240 seconds and no automatic installation starts after detection. This is still not proof of successful storage setup, package installation, reboot, or physical-system compatibility.
 ## Review-only per-phase gate
 
 `lab.execution_gate.assess_phase_request` adds a fail-closed, non-executing gate for one requested phase. It validates the reviewed plan's fixed phase/gate contract, compares fresh synthetic-target observations against the plan digest, checks prior hash-chained journal events, refuses phase retries or unresolved/failed prior phases, and requires a target-bound exact confirmation phrase for mutating phases.
