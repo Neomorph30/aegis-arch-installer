@@ -66,7 +66,13 @@ def run_review_session(
             return _blocked("Exact target-bound confirmation was not supplied; no target review or disk changes occurred", journal.path)
 
         events = journal.read()
-        gate = assess_phase_request(plan, probe(), "explicit_target_review", supplied, events)
+        try:
+            fresh_for_gate = probe()
+            gate = assess_phase_request(plan, fresh_for_gate, "explicit_target_review", supplied, events)
+        except (GuestProbeError, InstallSpecError, WorkflowPlanError, TypeError, ValueError) as exc:
+            journal.append("recovery_decision", status="STOP_AND_PRESERVE_EVIDENCE",
+                           note_code="invalid_target")
+            return _blocked(f"Fresh target observation failed after confirmation: {exc}", journal.path)
         if gate.get("status") != "GATE_PASSED_REVIEW_ONLY":
             journal.append("recovery_decision", status="STOP_AND_PRESERVE_EVIDENCE",
                            note_code="invalid_target")
