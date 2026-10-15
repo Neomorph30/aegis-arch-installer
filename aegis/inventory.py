@@ -20,6 +20,8 @@ def _meaningful_references(value: Any) -> tuple[bool, bool]:
     if value is None or value == "":
         return False, False
     if isinstance(value, str):
+        if value and not value.strip():
+            return False, True
         return bool(value.strip()), False
     if isinstance(value, list):
         found = False
@@ -27,6 +29,8 @@ def _meaningful_references(value: Any) -> tuple[bool, bool]:
             if item is None or item == "":
                 continue
             if isinstance(item, str):
+                if item and not item.strip():
+                    return False, True
                 found = found or bool(item.strip())
             else:
                 return False, True
