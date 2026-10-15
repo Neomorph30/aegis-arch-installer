@@ -9,6 +9,7 @@ from pathlib import Path
 import sys
 from typing import Any
 
+from .assurance import formatted_manifest
 from .hardware import HardwareInspectionError, inspect
 from .network import NetworkSetupError, interactive_preflight, network_preflight, print_network_status, launch_wifi_setup
 from .planner import PlanError, build_storage_plan
@@ -182,6 +183,8 @@ def main(argv: list[str] | None = None) -> int:
     p_profile = sub.add_parser("profile", help="Show proposed software/security profile; no changes")
     p_profile.add_argument("--name", choices=["secure-workstation", "secure-gaming"], default="secure-gaming")
     p_profile.add_argument("--inventory", help="Use a simulated JSON fixture")
+    p_assurance = sub.add_parser("assurance", help="Read-only feature and safety readiness status")
+    p_assurance.add_argument("--json", action="store_true")
     p_network = sub.add_parser("network", help="Check HTTPS connectivity; opt-in interactive Wi-Fi setup")
     p_network.add_argument("--connect", action="store_true", help="Offer interactive Wi-Fi setup when HTTPS cannot be verified")
     p_report = sub.add_parser("report", help="Render read-only HTML plan report")
@@ -216,6 +219,8 @@ def main(argv: list[str] | None = None) -> int:
             return wizard(args.inventory)
         elif args.command == "profile":
             print(json.dumps(recommend(_inventory(args.inventory), args.name), indent=2))
+        elif args.command == "assurance":
+            print(formatted_manifest(as_json=args.json))
         elif args.command == "network":
             if args.connect:
                 if not sys.stdin.isatty() or not sys.stdout.isatty():

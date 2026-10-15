@@ -9,7 +9,7 @@
 - [x] Sanitary proposal-only HTML report and local protected JSON
 - [x] Fictional fixtures, automated tests, GitHub workflow
 - [ ] External design and security review
-- [ ] Publish repository and verify GitHub Actions execution
+- [x] Publish repository and verify GitHub Actions execution
 
 ## Phase 1: virtualized installer (NOT IMPLEMENTED)
 - [ ] Narrow, standalone privileged executor; disposable virtual disks only
@@ -36,3 +36,13 @@
 - [ ] Signed custom ArchISO and trusted update/verification process
 - [ ] Reversible, measured optimization engine; no unsafe performance claims
 - [ ] Independent security audit, hardware matrix, tested recovery path
+
+## Layer 01 — assurance and security quality baseline
+- [x] Versioned security requirements and explicit support matrix
+- [x] Threat model and prioritized preliminary risk register
+- [x] Security guardrail executable and malicious-code regression tests
+- [x] SHA-pinned CI actions and constrained GitHub workflow permissions
+- [x] Machine-readable CLI readiness status with honest unimplemented capabilities
+- [ ] External independent reviewer endorsement (not falsely claimed)
+
+See [Development Layers](DEVELOPMENT_LAYERS.md) for the full 20-layer plan.

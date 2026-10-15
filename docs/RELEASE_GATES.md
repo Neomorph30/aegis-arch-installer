@@ -1,6 +1,6 @@
 # AEGIS release and safety gates
 
-## Preview 0.2 — read-only
+## Preview 0.2 — read-only; Layer 01 engineering requirements
 
 - [x] No disk installation/execution subsystem exists.
 - [x] Device enumeration runs only allowlisted read-only commands.
@@ -9,7 +9,11 @@
 - [x] Reports identify every unexecuted control as unverified.
 - [x] Local JSON files created with exclusive 0600 permissions.
 - [ ] Independent technical review of code and threat model.
-- [ ] Publish repository and verify GitHub Actions on all supported Pythons.
+- [x] Published public repository and verified GitHub Actions across Python 3.11–3.13.
+- [x] Versioned requirements, formalized threat register and supported-scope documentation.
+- [x] Developer CLI `aegis assurance` reports unimplemented security capabilities honestly.
+- [x] CI AST guardrail forbids new privileged command interfaces in this preview.
+- [ ] Independent technical security review remains outstanding (cannot self-certify).
 
 ## Before even enabling *virtual-disk-only* executor
 

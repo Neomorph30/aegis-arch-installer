@@ -30,6 +30,18 @@ reviewed and tested installation executor is ever introduced.
   without querying the user's machine at all.
 - Runs a standard-library-only Python test suite, plus GitHub Actions CI.
 
+## Security assurance baseline (Layer 01)
+
+`aegis assurance --json` prints a machine-readable declaration of which
+capabilities are only previews or not implemented; it is **not a security scan**.
+`python tools/security_lint.py` provides a fail-closed regression check against
+privileged process execution in the preview, but does not replace security review.
+See [requirements](docs/SECURITY_REQUIREMENTS.json),
+[threat model](docs/THREAT_MODEL.md),
+[risk register](docs/RISK_REGISTER.md),
+[support matrix](docs/SUPPORT_MATRIX.md), and
+[quality standards](docs/QUALITY_STANDARDS.md).
+
 ## Quick start
 
 Requires Python 3.11+ on Linux. Live discovery requires `lsblk`; `lspci` is optional.
@@ -38,6 +50,8 @@ No root access or network access is required for the included fixture demo.
 ```bash
 # Clone/extract this repository and run from its root directory:
 python -m aegis --help
+python -m aegis assurance --json
+python tools/security_lint.py
 python -m aegis menu --inventory fixtures/desktop-example.json  # interactive start screen
 python -m aegis inspect --inventory fixtures/desktop-example.json
 python -m aegis wizard --inventory fixtures/desktop-example.json
