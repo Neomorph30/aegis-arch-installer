@@ -230,8 +230,9 @@ class CLITests(unittest.TestCase):
             self.assertEqual(main(['--smoke']), 2)
 
     def test_boot_observation_requires_smoke_mode(self):
-        with patch('lab.runtime.os.geteuid', return_value=1000), patch('lab.runtime.dependencies', return_value={'qemu_present': True, 'swtpm_present': True, 'ovmf_pair_present': True}), patch('lab.runtime.shutil.which', return_value='/usr/bin/tesseract'):
-            self.assertEqual(main(['--run', '--observe-boot', '--iso', '/missing.iso', '--iso-sha256', '0' * 64]), 2)
+        with self.assertRaises(SystemExit) as cm:
+            main(['--run', '--observe-boot', '--iso', '/missing.iso', '--iso-sha256', '0' * 64])
+        self.assertEqual(cm.exception.code, 2)
 
 if __name__ == '__main__':
     unittest.main()
