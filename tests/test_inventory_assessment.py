@@ -167,6 +167,18 @@ class InventoryAssessmentTests(unittest.TestCase):
         self.assertEqual(result["status"], "blocked")
         self.assertTrue(any(f["code"] == "TREE_LIMIT" for f in result["findings"]))
 
+    def test_missing_child_topology_is_not_assumed_empty(self):
+        value = disk()
+        value.pop("children")
+        result = assess(value)
+        self.assertEqual(result["status"], "blocked")
+        self.assertTrue(any(f["code"] == "MALFORMED_CHILDREN" for f in result["findings"]))
+
+    def test_null_child_topology_blocks_whole_result(self):
+        result = assess(disk(children=None))
+        self.assertEqual(result["status"], "blocked")
+        self.assertTrue(any(f["code"] == "MALFORMED_CHILDREN" for f in result["findings"]))
+
     def test_malformed_child_collection_blocks_whole_result(self):
         result = assess(disk(children={"unexpected": "mapping"}))
         self.assertEqual(result["status"], "blocked")
