@@ -55,6 +55,14 @@ class InventoryAssessmentTests(unittest.TestCase):
                 self.assertEqual(result["status"], "blocked")
                 self.assertTrue(any(f["code"] == "DUPLICATE_IDENTITY" for f in result["findings"]))
 
+    def test_serial_text_matching_another_disks_wwn_is_not_cross_namespace_collision(self):
+        result = assess(
+            disk(serial="SHARED-TEXT", wwn="WWN-A"),
+            disk(path="/dev/sda", serial="SERIAL-B", wwn="SHARED-TEXT"),
+        )
+        self.assertEqual(result["status"], "review_required")
+        self.assertFalse(any(f["code"] == "DUPLICATE_IDENTITY" for f in result["findings"]))
+
     def test_same_serial_and_wwn_text_on_one_device_is_not_self_collision(self):
         result = assess(disk(serial="SAME", wwn="SAME"))
         self.assertEqual(result["status"], "review_required")
