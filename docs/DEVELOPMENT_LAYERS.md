@@ -30,35 +30,35 @@ Read-only hardware probes, storage proposals, Btrfs/ext4 layout proposals, TUI w
 **Exit:** documented v1 support matrix and reviewed gates; reproducible, green tests; explicit security review signoff required before privileged executor.
 
 ### Layer 02 — Disposable virtual test laboratory
-**State: NOT STARTED. Depends on Layer 01.**
+**State: IMPLEMENTED AS A RESTRICTED SMOKE LAB; guest installation remains untested. Depends on Layer 01.**
 - QEMU/KVM or other QEMU accelerator, OVMF UEFI, virtual TPM (swtpm), synthetic NVMe/SATA disk images.
 - Isolate the guest from host block devices and host-mounted filesystems.
 - Build repeatable snapshot/rollback harness and simulated interruption/reboot tests.
 **Exit:** tests prove intended guest disks are accessible and host drives are not; unattended disposable VM reset works.
 
 ### Layer 03 — Production-grade hardware inventory
-**State: PARTIAL. Depends on Layer 01.**
+**State: PARTIAL; conservative structured inventory analysis and bounded read-only recovery are merged, but live hardware coverage is incomplete. Depends on Layer 01.**
 - Replace loose probe output with a typed, versioned inventory: CPU/microcode, GPU IDs, NICs, RAM, firmware, TPM capabilities, drive serial/WWN/by-id, partitions, mount holders, swap, RAID/LVM/mapper trees.
 - Never infer writable eligibility from a device path, unused mountpoint, or missing warnings.
 - Redact identifying details from shareable diagnostics.
 **Exit:** fixtures cover NVMe, SATA, MMC, USB live media, arrays, hotplug, duplicate IDs and ambiguous configurations, all failing closed when necessary.
 
 ### Layer 04 — Complete accessible installer wizard and networking
-**State: PARTIAL. Depends on Layers 01,03.**
+**State: PARTIAL; the guided storage proposal flow and bounded input recovery are merged, but full installer configuration and persistent networking are not implemented. Depends on Layers 01,03.**
 - TUI keyboard navigation, help and accessibility; language, region, user, device, filesystem, security, desktop and optional-module steps.
 - Read-only connectivity diagnostic; opt-in Wi-Fi via system tools; distinguish DNS/TLS/captive portal and unreachable mirrors.
 - Present constraints and dependencies *before* user commits choices; support going back safely.
 **Exit:** scripted TUI flows and negative tests; no raw credentials handled by AEGIS; offline states are truthful.
 
 ### Layer 05 — Advanced storage planner and consent
-**State: PARTIAL. Depends on Layers 03,04.**
+**State: PARTIAL; validated identities, inventory fingerprint and tamper-detection digest are merged. Digest verification is not authorization, and no storage write is enabled. Depends on Layers 03,04.**
 - Design EFI/system/data partitions with checked alignment, size/headroom, encryption, Btrfs subvolumes and mountpoints; preserve secondary drives by default.
 - Model manual partitioning, existing ESPs and existing data without automatically enabling risky dual-boot shrinking.
 - Generate immutable, schema-versioned plans; show before/after maps and per-device destructive warnings.
 **Exit:** fuzz/geometry tests, device-collision and boot-medium exclusions; every proposed write identifies its exact target and requires independent authorization later.
 
 ### Layer 06 — Narrow privileged execution boundary (virtual only)
-**State: NOT STARTED. Depends on Layers 02,03,05 and independent review.**
+**State: PARTIAL; a virtual-only review/simulation gate is merged, but no privileged executor or disk-writing operation exists. Depends on Layers 02,03,05 and independent review.**
 - Standalone executor with allowlisted structured operations, no shell interpolation, immutable reviewed plans, capability separation and just-in-time device revalidation.
 - Constrain to disposable virtual disk images; no access to physical host disk devices.
 - Durable operation journal, restart logic, rollback where feasible, refuse stale or tampered plans.
