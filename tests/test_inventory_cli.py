@@ -83,6 +83,15 @@ class InventoryAssessorCliTests(unittest.TestCase):
         _require_live_target_reviewable("/dev/test0")
 
     @patch("aegis.cli.read_assessment_observation")
+    def test_live_target_guard_blocks_changed_identity_snapshot(self, probe):
+        probe.return_value = observation(serial="REPLACED-SERIAL")
+        with self.assertRaises(PlanError):
+            _require_live_target_reviewable("/dev/test0", {
+                "path": "/dev/test0", "serial": "TEST-SERIAL-0",
+                "wwn": "TEST-WWN-0", "size": None,
+            })
+
+    @patch("aegis.cli.read_assessment_observation")
     def test_live_target_guard_blocks_mounted_target(self, probe):
         probe.return_value = observation(mountpoints=["/"])
         with self.assertRaises(PlanError):
