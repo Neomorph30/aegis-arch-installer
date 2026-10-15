@@ -69,7 +69,7 @@ class GuestInstallSpecTests(unittest.TestCase):
     def test_mounted_child_rejected(self):
         obs = observation()
         obs["devices"][0]["children"] = [
-            {"path": "/dev/vda1", "type": "part", "mountpoints": ["/mnt/host-data"]}
+            {"path": "/dev/vda1", "type": "part", "mountpoints": ["/mnt/host-data"], "children": []}
         ]
         with self.assertRaisesRegex(InstallSpecError, "partition"):
             build_guest_install_spec(obs)
@@ -96,6 +96,42 @@ class GuestInstallSpecTests(unittest.TestCase):
         obs = observation()
         obs["devices"][0]["size_bytes"] = MIN_PRIMARY_BYTES - 1
         with self.assertRaisesRegex(InstallSpecError, "at least 24 GiB"):
+            build_guest_install_spec(obs)
+
+    def test_malformed_top_level_device_fails_closed(self):
+        obs = observation()
+        obs["devices"].append(None)
+        with self.assertRaisesRegex(InstallSpecError, "malformed observation"):
+            build_guest_install_spec(obs)
+
+    def test_missing_primary_readonly_state_fails_closed(self):
+        obs = observation()
+        obs["devices"][0].pop("read_only")
+        with self.assertRaisesRegex(InstallSpecError, "read/write state"):
+            build_guest_install_spec(obs)
+
+    def test_missing_mountpoints_fails_closed(self):
+        obs = observation()
+        obs["devices"][0].pop("mountpoints")
+        with self.assertRaisesRegex(InstallSpecError, "Mountpoint observations are missing"):
+            build_guest_install_spec(obs)
+
+    def test_malformed_holder_state_fails_closed(self):
+        obs = observation()
+        obs["devices"][0]["holders"] = None
+        with self.assertRaisesRegex(InstallSpecError, "holder state"):
+            build_guest_install_spec(obs)
+
+    def test_malformed_active_swap_list_fails_closed(self):
+        obs = observation()
+        obs["active_swaps"] = [None]
+        with self.assertRaisesRegex(InstallSpecError, "Active swap observations are malformed"):
+            build_guest_install_spec(obs)
+
+    def test_missing_secondary_capacity_fails_closed(self):
+        obs = observation()
+        obs["devices"][1].pop("size_bytes")
+        with self.assertRaisesRegex(InstallSpecError, "Secondary lab disk capacity"):
             build_guest_install_spec(obs)
 
     def test_network_mode_must_be_explicit(self):

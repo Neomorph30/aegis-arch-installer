@@ -21,19 +21,24 @@ BOOT_PATH = "/dev/sr0"
 
 
 def _mountpoints(node: dict[str, Any]) -> list[str]:
-    values = node.get("mountpoints") or node.get("mountpoint") or []
+    if "mountpoints" in node:
+        values = node["mountpoints"]
+    elif "mountpoint" in node:
+        values = node["mountpoint"]
+    else:
+        raise InstallSpecError("Mountpoint observations are missing")
     if isinstance(values, str):
         values = [values]
-    if not isinstance(values, list):
+    if not isinstance(values, list) or any(value is not None and not isinstance(value, str) for value in values):
         raise InstallSpecError("Mountpoint observations are malformed")
     return [value for value in values if isinstance(value, str) and value.strip()]
 
 
 def _walk(node: dict[str, Any]):
     yield node
-    children = node.get("children") or []
-    if not isinstance(children, list):
-        raise InstallSpecError("Device tree children are malformed")
+    if "children" not in node or not isinstance(node["children"], list):
+        raise InstallSpecError("Device tree children are missing or malformed")
+    children = node["children"]
     for child in children:
         if not isinstance(child, dict):
             raise InstallSpecError("Device tree contains a malformed child")
@@ -73,8 +78,10 @@ def build_guest_install_spec(observation: dict[str, Any]) -> dict[str, Any]:
     raw = observation.get("devices")
     if not isinstance(raw, list):
         raise InstallSpecError("Block device observations must be a list")
-    disks = [d for d in raw if isinstance(d, dict) and d.get("type") == "disk"]
-    roms = [d for d in raw if isinstance(d, dict) and d.get("type") == "rom"]
+    if any(not isinstance(device, dict) for device in raw):
+        raise InstallSpecError("Block device list contains a malformed observation")
+    disks = [d for d in raw if d.get("type") == "disk"]
+    roms = [d for d in raw if d.get("type") == "rom"]
     if len(disks) != 2:
         raise InstallSpecError("Expected exactly two lab disks; extra or missing disks are forbidden")
     primary = [d for d in disks if d.get("path") == PRIMARY_PATH]
@@ -87,12 +94,21 @@ def build_guest_install_spec(observation: dict[str, Any]) -> dict[str, Any]:
     size = primary.get("size_bytes")
     if isinstance(size, bool) or not isinstance(size, int) or size < MIN_PRIMARY_BYTES:
         raise InstallSpecError("Primary lab disk must have a verified capacity of at least 24 GiB")
-    if primary.get("read_only") is True:
-        raise InstallSpecError("Primary lab disk is read-only")
+    if primary.get("read_only") is not False:
+        raise InstallSpecError("Primary lab disk read/write state is not positively verified")
     if secondary.get("read_only") is not True:
         raise InstallSpecError("Secondary lab disk must be read-only during Layer 07")
+    secondary_size = secondary.get("size_bytes")
+    if isinstance(secondary_size, bool) or not isinstance(secondary_size, int) or secondary_size <= 0:
+        raise InstallSpecError("Secondary lab disk capacity is missing or malformed")
     for disk in (primary, secondary):
-        if _mountpoints(disk) or disk.get("holders") or disk.get("active_swap"):
+        holders = disk.get("holders")
+        active_swap = disk.get("active_swap")
+        if not isinstance(holders, list) or any(not isinstance(item, str) for item in holders):
+            raise InstallSpecError("Disk holder state is missing or malformed")
+        if not isinstance(active_swap, bool):
+            raise InstallSpecError("Active-swap state is missing or malformed")
+        if _mountpoints(disk) or holders or active_swap:
             raise InstallSpecError("A lab disk is mounted, held, or active as swap")
         for node in _walk(disk):
             if _mountpoints(node):
@@ -100,9 +116,9 @@ def build_guest_install_spec(observation: dict[str, Any]) -> dict[str, Any]:
     if not any(d.get("path") == BOOT_PATH and d.get("type") == "rom" and d.get("read_only") is True for d in roms):
         raise InstallSpecError("A separate read-only boot medium was not verified")
     swaps = observation.get("active_swaps", [])
-    if not isinstance(swaps, list):
+    if not isinstance(swaps, list) or any(not isinstance(path, str) for path in swaps):
         raise InstallSpecError("Active swap observations are malformed")
-    if any(isinstance(path, str) and (path == PRIMARY_PATH or path.startswith(PRIMARY_PATH)) for path in swaps):
+    if any(path == PRIMARY_PATH or path.startswith(PRIMARY_PATH) for path in swaps):
         raise InstallSpecError("Primary lab disk is active as swap")
 
     root_bytes = ((size - 16 * 1024**2) // (1024**2)) * (1024**2) - EFI_BYTES
