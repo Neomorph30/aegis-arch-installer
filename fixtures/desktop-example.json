@@ -1,0 +1,44 @@
+{
+  "schema_version": "0.2",
+  "architecture": "x86_64",
+  "cpu": "Intel Core Ultra 7 265K (EXAMPLE HARDWARE)",
+  "ram_mib": 32768,
+  "uefi_detected": true,
+  "tpm_device_detected": true,
+  "tpm_version": "2.0-detected-unverified",
+  "secure_boot_state": "enabled-reported",
+  "gpu_devices": ["01:00.0 VGA compatible controller [0300]: NVIDIA Corporation Example RTX GPU [10de:ffff]"],
+  "disks": [
+    {
+      "name": "nvme0n1", "path": "/dev/nvme0n1", "type": "disk",
+      "size": 1000204886016, "model": "Demo NVMe 1TB", "serial": "EXAMPLE-NVME-0001",
+      "wwn": "example-wwn-nvme", "tran": "nvme", "rm": false, "ro": false, "hotplug": false,
+      "mountpoints": [null],
+      "children": [
+        {"path": "/dev/nvme0n1p1", "type": "part", "size": 1073741824,
+         "fstype": "vfat", "mountpoints": [null]}
+      ]
+    },
+    {
+      "name": "sda", "path": "/dev/sda", "type": "disk",
+      "size": 2000398934016, "model": "Demo SATA 2TB", "serial": "EXAMPLE-SATA-0002",
+      "wwn": "example-wwn-sata", "tran": "sata", "rm": false, "ro": false, "hotplug": false,
+      "mountpoints": [null],
+      "children": [
+        {"path": "/dev/sda1", "type": "part", "size": 1998990000000,
+         "fstype": "crypto_LUKS", "mountpoints": [null]}
+      ]
+    },
+    {
+      "name": "sdb", "path": "/dev/sdb", "type": "disk",
+      "size": 16000000000, "model": "DEMO ARCH INSTALLER USB", "serial": "EXAMPLE-USB-0003",
+      "wwn": null, "tran": "usb", "rm": true, "ro": false, "hotplug": true,
+      "mountpoints": [null],
+      "children": [
+        {"path": "/dev/sdb1", "type": "part", "size": 14000000000,
+         "fstype": "iso9660", "mountpoints": ["/run/archiso/bootmnt"]}
+      ]
+    }
+  ],
+  "notes": ["Entire inventory is fictional. Device paths may not exist."]
+}

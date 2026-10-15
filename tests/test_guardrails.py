@@ -1,0 +1,77 @@
+"""Enforce preview-only boundaries while the project has no installation executor."""
+
+import ast
+import json
+import os
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from aegis import hardware
+from aegis.cli import _load_json, _write_json
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+class GuardrailTests(unittest.TestCase):
+    def test_no_disk_mutation_interface(self):
+        import aegis
+        self.assertFalse(hasattr(aegis, "install"))
+        self.assertFalse(hasattr(aegis, "execute_install"))
+        self.assertFalse((ROOT / "aegis" / "executor.py").exists())
+        self.assertFalse((ROOT / "aegis" / "partitioner.py").exists())
+
+    def test_subprocess_calls_are_confined_to_hardware_probe(self):
+        for file in (ROOT / "aegis").glob("*.py"):
+            tree = ast.parse(file.read_text())
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    if any(alias.name == "subprocess" for alias in node.names):
+                        self.assertEqual(file.name, "hardware.py")
+                if isinstance(node, ast.ImportFrom) and node.module == "subprocess":
+                    self.fail(f"Unexpected subprocess import: {file}")
+
+    def test_probes_are_explicitly_allowlisted(self):
+        with self.assertRaises(hardware.HardwareInspectionError):
+            hardware._run_readonly(["wipefs", "-a", "/dev/sdx"])
+        with self.assertRaises(hardware.HardwareInspectionError):
+            hardware._run_readonly(["lsblk", "--output", "PATH"])
+
+    def test_reports_exclusively_create_mode_600_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            destination = Path(d) / "plan.json"
+            _write_json(str(destination), {"status": "PROPOSAL_ONLY", "password": "hush"})
+            self.assertEqual(os.stat(destination).st_mode & 0o777, 0o600)
+            self.assertEqual(json.loads(destination.read_text())["password"], "[REDACTED]")
+            with self.assertRaises(FileExistsError):
+                _write_json(str(destination), {"x": True})
+
+    def test_report_output_rejects_existing_symlink(self):
+        with tempfile.TemporaryDirectory() as d:
+            protected = Path(d) / "protected.txt"
+            protected.write_text("do not replace")
+            link = Path(d) / "alias.json"
+            link.symlink_to(protected)
+            with self.assertRaises(OSError):
+                _write_json(str(link), {"x": 1})
+            self.assertEqual(protected.read_text(), "do not replace")
+
+    def test_large_input_json_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            filename = Path(d) / "large.json"
+            filename.write_text('{"x":"' + 'a' * (2 * 1024 * 1024) + '"}')
+            with self.assertRaises(ValueError):
+                _load_json(str(filename))
+
+    def test_fixture_does_not_access_machine(self):
+        # Simulated inventory never runs actual hardware probes.
+        fixture = ROOT / "fixtures" / "desktop-example.json"
+        with patch("aegis.cli.inspect", side_effect=AssertionError("live hardware accessed")):
+            from aegis.cli import _inventory
+            data = _inventory(str(fixture))
+        self.assertEqual(data["cpu"], "Intel Core Ultra 7 265K (EXAMPLE HARDWARE)")
+
+
+if __name__ == "__main__":
+    unittest.main()

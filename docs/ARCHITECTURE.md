@@ -1,0 +1,78 @@
+# Architecture — AEGIS developer preview 0.2
+
+AEGIS is designed as *separate* read-only and privileged boundaries:
+
+1. **Discovery** collects observations, never requires root and executes only
+   allowlisted `lsblk` and `lspci` probes with no shell.
+2. **Planning** is pure Python. It proposes explicit byte-aligned partitions,
+   identifies candidate devices and annotates blockers. It cannot write disks.
+3. **Review and consent** (in the future) will require a human to inspect each
+   affected device, its immutable identity, existing data and intended action.
+4. **Executor** is **not implemented**. It will be developed separately in a
+   disposable-VM-only branch and should have a narrow privileged API. It must
+   not trust paths, stale inventories, arbitrary shell commands, UI state or
+   signed policy claims without independent validation.
+5. **Verification** must independently prove boot, TPM PIN, offline recovery,
+   security controls, networking and installed packages.
+6. **Reporting** emits event evidence. A successful command exit is not proof
+   that a security control was verified.
+7. **Optimization** will be profile-driven, benchmark-informed and reversible.
+
+## Data flow
+
+```text
+Linux sysfs + allowlisted lsblk/lspci        Fixed test fixtures
+                |                                 |
+                +---------- inventory ----------+
+                                |
+                     immutable proposal logic
+                                |
+                  annotated storage/profile plans
+                                |
+                     JSON plan / HTML report
+                                |
+              [STOP: no installation execution exists]
+```
+
+Storage plan schema v0.2 includes: `schema_version`, `status=PROPOSAL_ONLY`,
+`execution_enabled=false`, `review_state`, device identities, actions with
+partition byte ranges (`offset_bytes` inclusive, `end_exclusive_bytes`),
+`blockers`, `warnings`, and non-PASSED test states. Proposed partitions are
+aligned to 1 MiB, with 4 GiB EFI and at least 16 MiB GPT headroom.
+
+The reference system layout uses a separate unencrypted FAT32 EFI System
+Partition, encrypted LUKS2 root, and Btrfs subvolumes, with ext4 as a proposed
+alternative. The secondary disk is **preserved by default**. If the user chooses
+an erase proposal for it, that action must receive independent confirmation in
+any future installer. The root TPM 2.0 + PIN flow will require signed UKIs,
+explicit TPM-policy verification and an offline LUKS2 recovery credential.
+
+## Isolation and upgrade model
+
+- No privileged functions reside in `aegis.cli`, `aegis.planner`,
+  `aegis.hardware`, `aegis.profiles`, or `aegis.reporting`.
+- User-supplied JSON can change a *proposal* but cannot trigger a write.
+- File outputs use exclusive creation and mode 0600. Existing files are not
+  silently overwritten.
+- Human-facing HTML uses escaping, a restrictive CSP and redaction. Default
+  shareable HTML hides serial and WWN fields; local JSON is NOT shareable.
+- A future stateful executor must pin a validated policy and kernel artifacts,
+  survive interrupted steps, and require explicit non-reusable authorization
+  for each destructive drive change.
+- Updates must preserve signed boot fallback and independently usable recovery
+  credentials. Filesystem snapshots are not backups.
+
+## Supported scope
+
+The first production target will be x86-64 UEFI systems. TPM 2.0, firmware,
+Wi-Fi, fingerprint readers, GPU drivers and VR headset support are separate
+capabilities that require tests on real hardware before claiming compatibility.
+
+## Engineering notes
+
+The reported EFI Secure Boot variable is informational, not a cryptographic
+proof of Secure Boot or platform trust. `lsblk` device names may be reassigned
+across boots. We must not imply that the safety checks in the planner are
+sufficient for actual disk writes: they are necessary preflight warnings, not
+a substitute for stable device re-identification, installation-media exclusion,
+conflicting partition detection, and consent in the eventual executor.
