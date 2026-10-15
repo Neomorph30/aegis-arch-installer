@@ -4,80 +4,199 @@ This module consumes structured observations; it does not probe or mutate hardwa
 An assessment is advisory and never grants permission to write to a device.
 """
 from __future__ import annotations
+
+import re
 from typing import Any
 
 SCHEMA_VERSION = 1
 _BLOCKED = {"mounted", "active_swap", "has_holders", "ambiguous_identity", "malformed"}
+_MAX_DEPTH = 16
+_MAX_NODES = 4096
+_DEVICE_PATH = re.compile(r"^/dev/[A-Za-z0-9_.!:+-]+(?:/[A-Za-z0-9_.!:+-]+)*$")
+
+
+def _meaningful_references(value: Any) -> tuple[bool, bool]:
+    """Return (has-reference, malformed) for lsblk-style optional reference lists."""
+    if value is None or value == "":
+        return False, False
+    if isinstance(value, str):
+        return bool(value.strip()), False
+    if isinstance(value, list):
+        found = False
+        for item in value:
+            if item is None or item == "":
+                continue
+            if isinstance(item, str):
+                found = found or bool(item.strip())
+            else:
+                return False, True
+        return found, False
+    return False, True
+
 
 def assess_inventory(observation: dict[str, Any]) -> dict[str, Any]:
     """Validate a lsblk-like fixture and return per-device safety findings."""
     findings: list[dict[str, str]] = []
     devices: list[dict[str, Any]] = []
+
+    def add(code: str, severity: str, message: str, next_action: str) -> None:
+        findings.append({"code": code, "severity": severity,
+                         "message": message, "next_action": next_action})
+
+    def blocked_result(code: str, message: str, next_action: str) -> dict[str, Any]:
+        return {"schema_version": SCHEMA_VERSION, "status": "blocked", "devices": [],
+                "findings": [{"code": code, "severity": "error", "message": message,
+                              "next_action": next_action}], "write_authorized": False}
+
     if not isinstance(observation, dict) or not isinstance(observation.get("devices"), list):
-        return {"schema_version": SCHEMA_VERSION, "status": "blocked",
-                "devices": [], "findings": [{"code": "INVALID_INVENTORY",
-                "severity": "error", "message": "Expected an object with a devices list.",
-                "next_action": "Re-run read-only discovery; do not plan writes."}],
-                "write_authorized": False}
+        return blocked_result("INVALID_INVENTORY", "Expected an object with a devices list.",
+                              "Re-run read-only discovery; do not plan writes.")
     if not observation["devices"]:
-        return {"schema_version": SCHEMA_VERSION, "status": "blocked",
-                "devices": [], "findings": [{"code": "EMPTY_INVENTORY",
-                "severity": "error", "message": "No devices were discovered.",
-                "next_action": "Check discovery tools and permissions; do not plan writes."}],
-                "write_authorized": False}
+        return blocked_result("EMPTY_INVENTORY", "No devices were discovered.",
+                              "Check discovery tools and permissions; do not plan writes.")
+
     seen_paths: set[str] = set()
     seen_ids: dict[str, str] = {}
     count = 0
+    limit_reported = False
+
     def visit(node: Any, depth: int = 0) -> None:
-        nonlocal count
-        if depth > 16 or count >= 4096:
-            findings.append({"code":"TREE_LIMIT","severity":"error","message":"Device tree exceeds safety limits.","next_action":"Inspect hardware topology manually."})
+        nonlocal count, limit_reported
+        if depth > _MAX_DEPTH or count >= _MAX_NODES:
+            if not limit_reported:
+                add("TREE_LIMIT", "error", "Device tree exceeds safety limits.",
+                    "Inspect hardware topology manually.")
+                limit_reported = True
             return
         count += 1
         if not isinstance(node, dict):
-            findings.append({"code":"MALFORMED_NODE","severity":"error","message":"Device entry is not an object.","next_action":"Repeat discovery and inspect source output."})
+            add("MALFORMED_NODE", "error", "Device entry is not an object.",
+                "Repeat discovery and inspect source output.")
             return
+
         path = node.get("path")
         kind = node.get("type")
-        if not isinstance(path, str) or not path.startswith("/dev/") or path in seen_paths:
-            findings.append({"code":"AMBIGUOUS_PATH","severity":"error","message":"Missing, invalid or duplicate device path.","next_action":"Do not select this device; refresh inventory."})
+        state = "review"
+        if (not isinstance(path, str) or not _DEVICE_PATH.fullmatch(path)
+                or any(part in {".", ".."} for part in path.split("/"))
+                or any(ord(ch) < 32 or ord(ch) == 127 for ch in path)):
+            add("AMBIGUOUS_PATH", "error", "Missing or invalid device path.",
+                "Do not select this device; refresh inventory.")
+            state = "blocked"
+        elif path in seen_paths:
+            add("AMBIGUOUS_PATH", "error", "Duplicate device path.",
+                "Do not select this device; refresh inventory.")
             state = "blocked"
         else:
             seen_paths.add(path)
-            state = "review"
-        ident = node.get("wwn") or node.get("serial")
-        if ident:
-            if not isinstance(ident, str) or ident in seen_ids:
-                findings.append({"code":"DUPLICATE_IDENTITY","severity":"error","message":"Duplicate or invalid stable device identifier.","next_action":"Resolve device identity ambiguity before planning."})
-                state = "blocked"
-            else:
-                seen_ids[ident] = path
-        reasons = []
-        if node.get("mountpoints") or node.get("mountpoint"):
-            reasons.append("mounted")
-        if node.get("active_swap"):
-            reasons.append("active_swap")
-        if node.get("holders") or kind in {"crypt", "lvm", "raid", "md"}:
-            reasons.append("has_holders")
-        if node.get("ambiguous"):
-            reasons.append("ambiguous_identity")
-        for reason in reasons:
-            findings.append({"code":reason.upper(),"severity":"warning","message":f"Device {path} has {reason.replace('_',' ')} state.","next_action":"Review dependencies; never automatically detach or deactivate it."})
-        if any(r in _BLOCKED for r in reasons):
+
+        if not isinstance(kind, str) or not kind.strip():
+            add("MALFORMED_TYPE", "error", "Device type is missing or invalid.",
+                "Repeat discovery and inspect source output.")
             state = "blocked"
-        devices.append({"path":path if isinstance(path,str) else None,"type":kind if isinstance(kind,str) else None,
-                        "stable_id":ident if isinstance(ident,str) else None,"state":state,"reasons":reasons})
+
+        serial = node.get("serial")
+        wwn = node.get("wwn")
+        ident: str | None = None
+        if serial is not None and serial != "" and not isinstance(serial, str):
+            add("MALFORMED_IDENTITY", "error", "Serial identifier has an invalid type.",
+                "Resolve device identity ambiguity before planning.")
+            state = "blocked"
+        if wwn is not None and wwn != "" and not isinstance(wwn, str):
+            add("MALFORMED_IDENTITY", "error", "WWN identifier has an invalid type.",
+                "Resolve device identity ambiguity before planning.")
+            state = "blocked"
+        if isinstance(serial, str) and serial.strip():
+            ident = serial.strip()
+        if isinstance(wwn, str) and wwn.strip():
+            ident = wwn.strip()
+        for label, raw in (("serial", serial), ("wwn", wwn)):
+            if isinstance(raw, str) and raw != "":
+                normalized = raw.strip()
+                if (not normalized or any(ord(ch) < 32 or ord(ch) == 127 for ch in normalized)):
+                    add("MALFORMED_IDENTITY", "error", "Stable device identifier is blank or contains control characters.",
+                        "Resolve device identity ambiguity before planning.")
+                    state = "blocked"
+                elif normalized in seen_ids:
+                    add("DUPLICATE_IDENTITY", "error", "Duplicate stable device identifier.",
+                        "Resolve device identity ambiguity before planning.")
+                    state = "blocked"
+                else:
+                    seen_ids[normalized] = path if isinstance(path, str) else "UNKNOWN"
+
+        mountpoints, bad_mountpoints = _meaningful_references(
+            node.get("mountpoints", node.get("mountpoint")))
+        holders, bad_holders = _meaningful_references(node.get("holders"))
+        reasons: list[str] = []
+        if bad_mountpoints:
+            add("MALFORMED_MOUNTPOINTS", "error", "Mountpoint information has an invalid shape.",
+                "Repeat discovery; do not infer that the device is unused.")
+            reasons.append("malformed")
+        elif mountpoints:
+            reasons.append("mounted")
+        if bad_holders:
+            add("MALFORMED_HOLDERS", "error", "Device-holder information has an invalid shape.",
+                "Repeat discovery; do not infer that the device is unused.")
+            reasons.append("malformed")
+        elif holders:
+            reasons.append("has_holders")
+
+        active_swap = node.get("active_swap", False)
+        ambiguous = node.get("ambiguous", False)
+        if not isinstance(active_swap, bool):
+            add("MALFORMED_SWAP_STATE", "error", "Active-swap state is not a boolean.",
+                "Repeat discovery and inspect active swap.")
+            reasons.append("malformed")
+        elif active_swap:
+            reasons.append("active_swap")
+        if not isinstance(ambiguous, bool):
+            add("MALFORMED_AMBIGUITY_STATE", "error", "Ambiguity state is not a boolean.",
+                "Repeat discovery and inspect device identity.")
+            reasons.append("malformed")
+        elif ambiguous:
+            reasons.append("ambiguous_identity")
+
+        if kind in {"crypt", "lvm", "raid", "md", "mpath", "dm"}:
+            reasons.append("has_holders")
+        for reason in dict.fromkeys(reasons):
+            if reason not in {"malformed"}:
+                add(reason.upper(), "warning",
+                    f"Device {path if isinstance(path, str) else 'UNKNOWN'} has {reason.replace('_', ' ')} state.",
+                    "Review dependencies; never automatically detach or deactivate it.")
+        if any(reason in _BLOCKED for reason in reasons):
+            state = "blocked"
+
+        devices.append({
+            "path": path if isinstance(path, str) else None,
+            "type": kind if isinstance(kind, str) else None,
+            "stable_id": ident,
+            "state": state,
+            "reasons": list(dict.fromkeys(reasons)),
+        })
+
         children = node.get("children", [])
-        if children is not None:
-            if not isinstance(children, list):
-                findings.append({"code":"MALFORMED_CHILDREN","severity":"error","message":"Children field is not a list.","next_action":"Refresh inventory and inspect probe output."})
-            else:
-                for child in children:
-                    visit(child, depth + 1)
+        if children is None:
+            return
+        if not isinstance(children, list):
+            add("MALFORMED_CHILDREN", "error", "Children field is not a list.",
+                "Refresh inventory and inspect probe output.")
+            # This is a global block even if the node's display state is retained.
+            return
+        for child in children:
+            visit(child, depth + 1)
+
     for root in observation["devices"]:
         visit(root)
-    blocked = any(d["state"] == "blocked" for d in devices) or any(f["severity"] == "error" for f in findings)
-    return {"schema_version":SCHEMA_VERSION,"status":"blocked" if blocked else "review_required",
-            "devices":devices,"findings":findings,
-            "write_authorized":False,
-            "note":"Read-only assessment only. Re-probe device identity immediately before any future operation."}
+        if count >= _MAX_NODES:
+            break
+
+    blocked = any(device["state"] == "blocked" for device in devices) or any(
+        finding["severity"] == "error" for finding in findings)
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "status": "blocked" if blocked else "review_required",
+        "devices": devices,
+        "findings": findings,
+        "write_authorized": False,
+        "note": "Read-only assessment only. Re-probe device identity immediately before any future operation.",
+    }
