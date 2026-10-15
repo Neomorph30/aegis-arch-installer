@@ -136,7 +136,10 @@ def assess_inventory(observation: dict[str, Any]) -> dict[str, Any]:
         else:
             mountpoints, bad_mountpoints = _meaningful_references(
                 node.get("mountpoints", node.get("mountpoint")))
-        holders, bad_holders = _meaningful_references(node.get("holders"))
+        if "holders" not in node:
+            holders, bad_holders = False, True
+        else:
+            holders, bad_holders = _meaningful_references(node.get("holders"))
         reasons: list[str] = []
         if bad_mountpoints:
             add("MALFORMED_MOUNTPOINTS", "error", "Mountpoint information has an invalid shape.",
