@@ -237,6 +237,8 @@ def main(argv: list[str] | None = None) -> int:
     p_wizard.add_argument("--inventory", help="Use a simulated JSON fixture")
     p_profile = sub.add_parser("profile", help="Show proposed software/security profile; no changes")
     p_profile.add_argument("--name", choices=["secure-workstation", "secure-gaming"], default="secure-gaming")
+    p_profile.add_argument("--desktop", choices=["kde-plasma", "gnome", "xfce", "other"], default="kde-plasma",
+                           help="Desktop candidate; KDE Plasma is the only qualified initial choice")
     p_profile.add_argument("--inventory", help="Use a simulated JSON fixture")
     p_assurance = sub.add_parser("assurance", help="Read-only feature and safety readiness status")
     p_assurance.add_argument("--json", action="store_true")
@@ -273,7 +275,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "wizard":
             return wizard(args.inventory)
         elif args.command == "profile":
-            print(json.dumps(recommend(_inventory(args.inventory), args.name), indent=2))
+            print(json.dumps(recommend(_inventory(args.inventory), args.name, args.desktop), indent=2))
         elif args.command == "assurance":
             print(formatted_manifest(as_json=args.json))
         elif args.command == "network":
