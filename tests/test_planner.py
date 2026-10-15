@@ -119,6 +119,17 @@ class PlannerTests(unittest.TestCase):
         with self.assertRaises(PlanError):
             build_storage_plan(data, "/dev/nvme0n1")
 
+    def test_missing_mountpoint_observations_fail_closed(self):
+        data = inventory()
+        data["disks"][0].pop("mountpoints")
+        with self.assertRaises(PlanError):
+            build_storage_plan(data, "/dev/nvme0n1")
+
+        data = inventory()
+        data["disks"][0]["children"][0].pop("mountpoints")
+        with self.assertRaises(PlanError):
+            build_storage_plan(data, "/dev/nvme0n1")
+
     def test_malformed_partition_observations_fail_closed(self):
         cases = [
             {"mountpoints": {"root": "/"}},
