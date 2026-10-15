@@ -61,6 +61,60 @@ def read_disks() -> list[dict[str, Any]]:
             if isinstance(d, dict) and d.get("type") == "disk"]
 
 
+def _active_swap_paths() -> set[str] | None:
+    """Read active swap device paths; None means state could not be verified."""
+    try:
+        lines = Path("/proc/swaps").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    paths: set[str] = set()
+    for line in lines[1:]:
+        fields = line.split()
+        if not fields:
+            continue
+        try:
+            paths.add(str(Path(fields[0]).resolve(strict=False)))
+        except (OSError, RuntimeError):
+            paths.add(fields[0])
+    return paths
+
+
+def _enrich_block_node(node: dict[str, Any], swap_paths: set[str] | None) -> None:
+    """Attach explicit holder and swap observations to every lsblk tree node."""
+    path = node.get("path")
+    name = Path(path).name if isinstance(path, str) else ""
+    holder_dir = Path("/sys/class/block") / name / "holders"
+    try:
+        node["holders"] = sorted(entry.name for entry in holder_dir.iterdir())
+    except OSError:
+        # Unknown is deliberately not represented as an empty holder list.
+        node["holders"] = None
+    if swap_paths is None or not isinstance(path, str):
+        node["active_swap"] = None
+    else:
+        try:
+            resolved = str(Path(path).resolve(strict=False))
+        except (OSError, RuntimeError):
+            resolved = path
+        node["active_swap"] = resolved in swap_paths
+    # Identity collisions are checked by the assessor across the complete tree.
+    node["ambiguous"] = False
+    children = node.get("children")
+    if isinstance(children, list):
+        for child in children:
+            if isinstance(child, dict):
+                _enrich_block_node(child, swap_paths)
+
+
+def read_assessment_observation() -> dict[str, Any]:
+    """Build a live, read-only observation for the conservative inventory assessor."""
+    disks = read_disks()
+    swap_paths = _active_swap_paths()
+    for disk in disks:
+        _enrich_block_node(disk, swap_paths)
+    return {"devices": disks}
+
+
 def _cpu_label() -> str:
     for line in _read_text("/proc/cpuinfo").splitlines():
         if line.lower().startswith("model name"):
