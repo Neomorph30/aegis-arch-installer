@@ -399,8 +399,8 @@ def main(argv: list[str] | None = None) -> int:
     group.add_argument("--check", action="store_true", help="inspect installed lab dependencies; no changes")
     group.add_argument("--smoke", action="store_true", help="launch UEFI/TPM virtual machine for a short time")
     group.add_argument("--run", action="store_true", help="start interactive VM; Ctrl+C cleans up disposable state")
-    group.add_argument("--observe-boot", action="store_true",
-                       help="capture loopback-only VNC screenshot and verify Arch UEFI boot-menu text with OCR")
+    parser.add_argument("--observe-boot", action="store_true",
+                        help="capture loopback-only VNC screenshot and verify Arch UEFI boot-menu text with OCR")
     parser.add_argument("--iso", type=Path, help="optional local Arch ISO to verify and copy into private lab")
     parser.add_argument("--iso-sha256", help="expected SHA-256 from an independently trusted Arch download/checksum source")
     parser.add_argument("--network-mode", choices=sorted(NETWORK_MODES), default="disabled",
