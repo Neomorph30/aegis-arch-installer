@@ -1,8 +1,8 @@
-name: Arch ISO Boot Menu Evidence
+name: Arch ISO Live Environment Evidence
 on:
   push:
     branches:
-      - feature/arch-boot-menu-evidence
+      - feature/arch-live-environment
   workflow_dispatch:
 permissions:
   contents: read
@@ -44,12 +44,12 @@ jobs:
         run: |
           set -euo pipefail
           python -m lab --check
-          python -m lab --smoke --observe-boot --seconds 20 \
+          python -m lab --smoke --observe-live --live-timeout-seconds 120 --seconds 5 \
             --iso "$RUNNER_TEMP/archlinux-$ARCH_ISO_VERSION-x86_64.iso" \
             --iso-sha256 "$ARCH_ISO_SHA256"
       - name: State evidence boundary
         if: always()
         run: |
-          echo "This workflow verifies the pinned ISO digest and attempts to detect the Arch UEFI boot menu in a QEMU screenshot using OCR."
-          echo "Boot-menu detection is limited evidence: it does not prove the kernel or live environment became usable."
+          echo "This workflow verifies the pinned ISO digest and waits for an Arch live-environment root prompt detected from QEMU screenshots using OCR."
+          echo "A detected prompt is limited evidence of the live environment, not proof of a completed installation or physical-hardware support."
           echo "No installation or disk mutation is performed."
