@@ -22,10 +22,16 @@ def _read(path: Path) -> str:
 
 def _run_lsblk(run: Callable[..., Any] = subprocess.run) -> str:
     command = ["lsblk", "--json", "--bytes", "--tree", "--output", LSBLK_FIELDS]
-    try:
-        result = run(command, check=True, capture_output=True, text=True, timeout=8)
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise GuestProbeError("Read-only lsblk probe failed; do not continue installation") from exc
+    for attempt in range(2):
+        try:
+            result = run(command, check=True, capture_output=True, text=True, timeout=8)
+            break
+        except subprocess.TimeoutExpired as exc:
+            if attempt == 0:
+                continue  # One bounded retry is safe for this read-only probe.
+            raise GuestProbeError("Read-only lsblk probe timed out twice; do not continue installation") from exc
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise GuestProbeError("Read-only lsblk probe failed; do not continue installation") from exc
     if not isinstance(result.stdout, str):
         raise GuestProbeError("lsblk returned no textual output")
     return result.stdout
