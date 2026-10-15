@@ -1,6 +1,6 @@
 # Layer 07 — Minimal Arch guest installation contract
 
-**Status: preflight specification implemented; guest installation engine remains unimplemented.** The pure `lab.install_spec` module validates a guest observation and creates a tamper-detectable review spec. The read-only `lab.guest_probe` adapter collects lsblk, sysfs, and active-swap observations with fixed commands and bounded timeouts. Neither module runs installation commands or modifies disks.
+**Status: preflight specification implemented; guest installation engine remains unimplemented.** The pure `lab.install_spec` module validates a guest observation and creates a tamper-detectable review spec. The read-only `lab.guest_probe` adapter collects lsblk, sysfs, and active-swap observations with fixed commands and bounded timeouts. The `python -m lab.guest_preflight` entry point prints a JSON review spec or a blocked recovery record. These modules do not run installation commands or modify disks.
 
 The existing QEMU lab proves that QEMU, paired OVMF firmware, and a software TPM can start together. It does not prove that the Arch ISO boots or that an installed guest can boot. Layer 07 must close that gap using disposable virtual disks only.
 
