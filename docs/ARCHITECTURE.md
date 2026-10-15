@@ -76,3 +76,24 @@ across boots. We must not imply that the safety checks in the planner are
 sufficient for actual disk writes: they are necessary preflight warnings, not
 a substitute for stable device re-identification, installation-media exclusion,
 conflicting partition detection, and consent in the eventual executor.
+
+
+## Network preflight and Wi-Fi onboarding
+
+The CLI `aegis network` makes bounded read-only HTTPS reachability attempts to
+independent public hosts. Failure is labelled **unverified**, never definitive
+"offline". AEGIS reads wireless interface hints from Linux sysfs; it does not
+assume Wi-Fi from an interface name. The main menu performs this check on real
+hardware, but explicitly skips it when demonstrating a fixture.
+
+On an unverified connection with detected Wi-Fi and a supported management tool,
+the user may authorize launching NetworkManager's `nmtui connect` or iwd's
+`iwctl`. These tools handle credentials interactively; AEGIS does not receive,
+log, or pass passwords on command lines. Setup requires a local TTY. The
+application then rechecks connectivity. No service starts, firewall changes,
+network profiles, or pacman mirrors are configured by AEGIS itself.
+
+Later releases must validate selected package mirrors and configure a suitable
+persistent networking manager in the installed system independently of the ISO.
+Captive portals, proxies, enterprise Wi-Fi, IPv6-only and missing firmware are
+not yet fully supported by the guided interface.
