@@ -67,9 +67,10 @@ Read-only hardware probes, storage proposals, Btrfs/ext4 layout proposals, TUI w
 ## Bootable secure Arch in a virtual machine
 
 ### Layer 07 — Minimal Arch installation engine
-**State: PARTIAL; a pure guest preflight specification and negative tests exist, but no guest command is executed and no Arch installation has been tested. Depends on Layer 06.**
+**State: PARTIAL; preflight spec, read-only guest probe, Arch ISO identity/digest gate, hash-chained transaction journal and conservative recovery assessment are implemented and CI-tested. These components do not execute guest installation commands; no Arch guest install or installed-system boot has been verified. Depends on Layer 06.**
 - On *disposable virtual disks only*: partition, create a root LUKS2 container with temporary/recovery credentials, format Btrfs, mount, `pacstrap`, set locale/timezone/users, generate fstab/crypttab/initramfs and provision initial UEFI boot.
 - Pin expected package inputs and verify output rather than trusting process exit alone.
+- Before any guest write path is enabled: connect every phase to the journal, re-probe disk identity immediately before mutation, verify an independently sourced Arch ISO digest, and add crash-injection tests. Current journal and ISO checks are safety primitives, not a completed installer.
 **Exit:** boots a minimal Arch VM from encrypted root and withstands interrupted install/retry tests; all state reported accurately.
 
 ### Layer 08 — Recovery-first LUKS2 and multi-drive management
