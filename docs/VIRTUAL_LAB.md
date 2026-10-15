@@ -45,3 +45,4 @@ Tests exercise missing dependencies, wrong firmware combinations, rejected devic
 Layer 06 will design the privileged *guest installer* (not part of this lab); Layer 07 will boot a minimal encrypted Arch guest; Layer 08 will demonstrate offline recovery, key/header backup and deliberate failures. This lab is a testing foundation, not evidence those later acceptance tests passed.
 
 References: [ArchWiki QEMU](https://wiki.archlinux.org/title/QEMU), [ArchWiki archiso](https://wiki.archlinux.org/title/archiso), [QEMU system security documentation](https://www.qemu.org/docs/master/system/security.html).
+\nWhen a verified ISO is attached, QEMU's boot order is explicitly set to optical media first; this only requests boot order and is not proof that the guest booted.\n
