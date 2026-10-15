@@ -59,10 +59,20 @@ class InventoryAssessmentTests(unittest.TestCase):
         result = assess(disk(serial="SAME", wwn="SAME"))
         self.assertEqual(result["status"], "review_required")
 
-    def test_missing_stable_identity_blocks(self):
+    def test_missing_stable_identity_blocks_physical_disk(self):
         result = assess(disk(serial=None, wwn=None))
         self.assertEqual(result["status"], "blocked")
         self.assertTrue(any(f["code"] == "MISSING_STABLE_IDENTITY" for f in result["findings"]))
+
+    def test_partition_without_own_stable_identity_is_not_rejected_for_that_alone(self):
+        parent = disk(children=[{
+            "path": "/dev/nvme0n1p1", "type": "part", "serial": None, "wwn": None,
+            "mountpoints": [None], "holders": [], "active_swap": False,
+            "ambiguous": False, "children": []
+        }])
+        result = assess(parent)
+        self.assertEqual(result["status"], "review_required")
+        self.assertIsNone(result["devices"][1]["stable_id"])
 
     def test_missing_mount_state_blocks(self):
         value = disk()
