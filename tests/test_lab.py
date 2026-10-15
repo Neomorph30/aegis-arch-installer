@@ -232,6 +232,19 @@ class CLITests(unittest.TestCase):
     def test_boot_observation_requires_smoke_mode(self):
         self.assertEqual(main(['--run', '--observe-boot', '--iso', '/missing.iso', '--iso-sha256', '0' * 64]), 2)
 
+    def test_live_observation_requires_smoke_mode(self):
+        self.assertEqual(main(['--run', '--observe-live']), 2)
+
+    def test_boot_observation_modes_are_mutually_exclusive(self):
+        self.assertEqual(main(['--smoke', '--observe-boot', '--observe-live']), 2)
+
+    def test_live_observation_timeout_is_bounded(self):
+        from lab.runtime import launch
+        with patch('lab.runtime.shutil.which', return_value='/usr/bin/tesseract'):
+            with self.assertRaisesRegex(LabError, '30 to 240 seconds'):
+                launch(LabConfig(), Path('/not-opened.iso'), observe_live=True,
+                       live_timeout_seconds=10)
+
 if __name__ == '__main__':
     unittest.main()
 
