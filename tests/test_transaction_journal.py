@@ -92,7 +92,7 @@ class TransactionJournalTests(unittest.TestCase):
         event = self.journal.read()[0]
         event["event_hash"] = 123
         with self.assertRaisesRegex(JournalError, "event hash is malformed"):
-            parse_journal((json.dumps(event) + "\\n").encode())
+            parse_journal((json.dumps(event) + "\n").encode())
 
     def test_oversized_journal_is_rejected(self):
         with self.assertRaisesRegex(JournalError, "exceeds the supported evidence size"):
