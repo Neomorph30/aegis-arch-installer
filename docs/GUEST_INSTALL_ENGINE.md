@@ -1,6 +1,6 @@
 # Layer 07 — Minimal Arch guest installation contract
 
-**Status: preflight specification implemented; guest installation engine remains unimplemented.** The pure `lab.install_spec` module validates a guest observation and creates a tamper-detectable review spec. The read-only `lab.guest_probe` adapter collects lsblk, sysfs, and active-swap observations with fixed commands and bounded timeouts. The `python -m lab.guest_preflight` entry point prints a JSON review spec or a blocked recovery record. These modules do not run installation commands or modify disks.
+**Status: preflight specification implemented; guest installation engine remains unimplemented.** The pure `lab.install_spec` module validates a guest observation and creates a tamper-detectable review spec. The read-only `lab.guest_probe` adapter collects lsblk, sysfs, and active-swap observations with fixed commands and bounded timeouts. The `python -m lab.guest_preflight` entry point prints a JSON review spec or a blocked recovery record. `lab.iso_validation` verifies a local ISO's ISO9660 descriptor, Arch volume label and SHA-256 against a digest supplied independently; the VM launcher refuses `--iso` unless `--iso-sha256` is supplied. These modules do not run installation commands or modify disks.
 
 The existing QEMU lab proves that QEMU, paired OVMF firmware, and a software TPM can start together. It does not prove that the Arch ISO boots or that an installed guest can boot. Layer 07 must close that gap using disposable virtual disks only.
 
@@ -10,7 +10,7 @@ The existing QEMU lab proves that QEMU, paired OVMF firmware, and a software TPM
 - The host creates new sparse regular files inside a private temporary workspace and attaches only those files to QEMU.
 - The guest has no host directory sharing, USB passthrough, host block-device paths, or bridged networking. Any future package-download networking must be a separate, explicit lab mode with bounded access and no inbound forwarding.
 - The primary virtual disk must have a fixed lab-only serial marker and be independently re-identified inside the guest immediately before every destructive phase.
-- The boot ISO and its integrity/provenance must be verified before use. Do not trust an arbitrary ISO simply because it boots.
+- The boot ISO must be a regular, non-symlink file with an Arch-labelled ISO9660 primary volume descriptor, and its SHA-256 must match an independently trusted expected digest before QEMU receives it. A hash only proves equality with the expected digest; it does not establish provenance if the digest itself came from an untrusted source.
 - All target writes are confined to the guest's synthetic disk; no host-side loop, NBD, mount, partition, or format operations are permitted.
 
 ## Required transaction phases

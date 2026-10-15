@@ -20,6 +20,8 @@ import tempfile
 import time
 from typing import Callable
 
+from .iso_validation import ISOValidationError, verify_arch_iso
+
 # Firmware code/vars must be paired by vendor and size: do not mix 2M/4M images.
 FIRMWARE_PAIRS = (
     ("/usr/share/edk2/x64/OVMF_CODE.4m.fd", "/usr/share/edk2/x64/OVMF_VARS.4m.fd"),
@@ -131,11 +133,15 @@ def _copy_regular_file(src: Path, dst: Path, *, max_bytes: int) -> int:
         os.close(fd)
 
 
-def prepare_workspace(workspace: Path, config: LabConfig, firmware: tuple[Path, Path], iso: Path | None) -> dict[str, Path]:
+def prepare_workspace(workspace: Path, config: LabConfig, firmware: tuple[Path, Path], iso: Path | None, *, iso_sha256: str | None = None) -> dict[str, Path]:
     """Only call inside private TemporaryDirectory created by this process."""
     config.validate()
     if not workspace.is_dir() or workspace.is_symlink() or (workspace.stat().st_mode & 0o077):
         raise LabError("Refusing non-private workspace")
+    if iso is not None and iso_sha256 is None:
+        raise LabError("An ISO requires an independently supplied --iso-sha256 digest")
+    if iso is None and iso_sha256 is not None:
+        raise LabError("An ISO digest was supplied without an ISO path")
     p = workspace / "primary.raw"
     s = workspace / "secondary.raw"
     _exclusive_sparse_file(p, config.primary_bytes)
@@ -146,8 +152,14 @@ def prepare_workspace(workspace: Path, config: LabConfig, firmware: tuple[Path, 
     tpm_state.mkdir(mode=0o700)
     result = {"primary": p, "secondary": s, "vars": v, "tpm_dir": tpm_state, "tpm_sock": workspace / "tpm.sock", "qmp_sock": workspace / "qmp.sock"}
     if iso is not None:
+        if iso_sha256 is None:
+            raise LabError("An ISO requires an independently supplied --iso-sha256 digest")
         dst = workspace / "installer.iso"
         _copy_regular_file(iso, dst, max_bytes=ISO_MAX_BYTES)
+        try:
+            verify_arch_iso(dst, iso_sha256)
+        except ISOValidationError as exc:
+            raise LabError(f"Installer ISO verification failed: {exc}") from exc
         result["iso"] = dst
     return result
 
@@ -241,7 +253,8 @@ def _finish(proc: subprocess.Popen | None) -> None:
             proc.wait(timeout=5)
 
 
-def launch(config: LabConfig, iso: Path | None = None, *, smoke: bool = True,
+def launch(config: LabConfig, iso: Path | None = None, *, iso_sha256: str | None = None,
+           smoke: bool = True,
            popen: Callable[..., subprocess.Popen] = subprocess.Popen) -> dict[str, object]:
     """Launch the disposable VM; always clean up state and processes."""
     config.validate()
@@ -255,7 +268,7 @@ def launch(config: LabConfig, iso: Path | None = None, *, smoke: bool = True,
     # Use OS-controlled secure name generation, independent of TMPDIR overrides.
     with tempfile.TemporaryDirectory(prefix="aegis-lab-", dir="/tmp") as work:
         folder = Path(work)
-        paths = prepare_workspace(folder, config, firmware, iso)
+        paths = prepare_workspace(folder, config, firmware, iso, iso_sha256=iso_sha256)
         tpm_args, vm_args = command_lines(config, firmware, paths, interactive=not smoke)
         tpm_proc = None
         vm_proc = None
@@ -320,7 +333,8 @@ def main(argv: list[str] | None = None) -> int:
     group.add_argument("--check", action="store_true", help="inspect installed lab dependencies; no changes")
     group.add_argument("--smoke", action="store_true", help="launch UEFI/TPM virtual machine for a short time")
     group.add_argument("--run", action="store_true", help="start interactive VM; Ctrl+C cleans up disposable state")
-    parser.add_argument("--iso", type=Path, help="optional local regular ISO to copy into private lab")
+    parser.add_argument("--iso", type=Path, help="optional local Arch ISO to verify and copy into private lab")
+    parser.add_argument("--iso-sha256", help="expected SHA-256 from an independently trusted Arch download/checksum source")
     parser.add_argument("--seconds", type=float, default=5.0, help="smoke interval (1–30 seconds)")
     parser.add_argument("--ram-mib", type=int, default=2048)
     parser.add_argument("--cpus", type=int, default=2)
@@ -328,9 +342,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         print(json.dumps(dependencies(), indent=2, sort_keys=True))
         return 0
+    if args.iso is not None and args.iso_sha256 is None:
+        print("AEGIS lab refused: --iso requires --iso-sha256 from an independently trusted source.", file=sys.stderr)
+        return 2
+    if args.iso is None and args.iso_sha256 is not None:
+        print("AEGIS lab refused: --iso-sha256 requires --iso.", file=sys.stderr)
+        return 2
     try:
         result = launch(LabConfig(ram_mib=args.ram_mib, cpus=args.cpus, seconds=args.seconds),
-                        args.iso, smoke=args.smoke)
+                        args.iso, iso_sha256=args.iso_sha256, smoke=args.smoke)
     except (LabError, OSError) as exc:
         print(f"AEGIS lab refused/failed: {exc}", file=sys.stderr)
         return 2
