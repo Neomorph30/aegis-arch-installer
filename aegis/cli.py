@@ -57,12 +57,24 @@ def _inventory(filename: str | None) -> dict[str, Any]:
     return _load_json(filename) if filename else inspect()
 
 
+def _readline(prompt: str) -> str | None:
+    """Treat EOF/Ctrl-C as a safe cancellation instead of a traceback."""
+    try:
+        return input(prompt)
+    except (EOFError, KeyboardInterrupt):
+        print("\\nInput closed or interrupted. Cancelling this step safely.")
+        return None
+
+
 def _choose(prompt: str, max_index: int, *, attempts: int = 3) -> int | None:
     """Bounded input recovery; Enter cancels, invalid input never changes state."""
     if max_index < 1:
         return None
     for attempt in range(attempts):
-        entry = input(prompt).strip()
+        raw_entry = _readline(prompt)
+        if raw_entry is None:
+            return None
+        entry = raw_entry.strip()
         if not entry:
             return None
         try:
@@ -138,7 +150,8 @@ def wizard(inventory_file: str | None = None) -> int:
         print(" BLOCKER:", blocker)
     for warning in plan["warnings"]:
         print(" WARNING:", warning)
-    filename = input("\nWrite JSON proposal to NEW filename (Enter = do not save): ").strip()
+    raw_filename = _readline("\nWrite JSON proposal to NEW filename (Enter = do not save): ")
+    filename = raw_filename.strip() if raw_filename is not None else ""
     if filename:
         _write_json(filename, plan)
         print("Proposal written:", filename)
@@ -165,7 +178,11 @@ def menu(inventory_file: str | None = None) -> int:
         print("4) View secure workstation profile (advisory)")
         print("5) Exit")
         print("6) Check internet / configure Wi-Fi")
-        choice = input("Select [1-6]: ").strip()
+        raw_choice = _readline("Select [1-6]: ")
+        if raw_choice is None:
+            print("Exiting without changes.")
+            return 0
+        choice = raw_choice.strip()
         if choice == "5" or not choice:
             print("Exiting without changes.")
             return 0
