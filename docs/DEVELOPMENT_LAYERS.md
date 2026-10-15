@@ -121,8 +121,10 @@ Read-only hardware probes, storage proposals, Btrfs/ext4 layout proposals, TUI w
 **Exit:** deliberately failed/unavailable sensor cannot lock out password login; PAM and wallet integration tested.
 
 ### Layer 15 — Conservative adaptive optimizer
-**State: NOT STARTED. Depends on Layers 11–13.**
-- Read-only baseline of storage, thermals, CPU frequency policy and performance; reversible recommended tuning.
+**State: POLICY PROTOTYPE IMPLEMENTED; system probing, tuning and rollback are NOT STARTED. Depends on Layers 11–13.**
+- `aegis.optimization` evaluates caller-supplied baseline/candidate benchmark records without running benchmarks or changing the host.
+- Requires matching hardware fingerprint and benchmark, at least three samples, passing stability gates, a minimum 3% median-FPS gain, no p95 frame-time regression, and a bounded temperature delta before a candidate can reach human review.
+- This is an initial policy threshold, not a universal safety guarantee; hardware-specific thermal limits and independent qualification remain required.
 - Benchmarks and user-approved changes with measured frametime/thermal results; snapshot plus non-filesystem rollback where applicable.
 - Custom-built kernels, overclocking and risky mitigation changes excluded from safe defaults.
 **Exit:** every applied change has justification, before/after evidence and tested rollback; regression reverts.
