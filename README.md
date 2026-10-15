@@ -1,6 +1,6 @@
 # AEGIS — Secure Arch Linux Installer
 
-**Developer preview 0.2 (pre-alpha): read-only. It cannot install Arch, wipe disks,
+**Developer preview 0.2 (pre-alpha): no disk writes. It cannot install Arch, wipe disks,
 enroll TPM keys, change Secure Boot, configure a firewall, or apply optimizations.**
 
 AEGIS aims to make a secure Arch Linux installation understandable, auditable and
@@ -18,6 +18,10 @@ reviewed and tested installation executor is ever introduced.
 - Flags mounted devices, installation USBs, missing disk identity, readonly disks,
   duplicate disk identity, unsuitable capacity, unsupported architectures and
   UEFI prerequisites.
+- Runs a read-only HTTPS internet preflight; if connectivity is unverified, offers
+  to open the existing interactive Wi-Fi tool with explicit consent. No passwords
+  are received or stored by AEGIS. Network settings can change only if the user
+  chooses to launch that tool.
 - Builds advisory workstation/gaming package profiles without installing packages
   or assuming a detected GPU has compatible drivers.
 - Produces 0600 JSON proposals and sanitized HTML planning reports that never
@@ -53,6 +57,8 @@ For a live, **read-only** inventory on Linux:
 ```bash
 python -m aegis inspect
 python -m aegis inspect --json
+python -m aegis network             # Read-only internet verification
+python -m aegis network --connect   # Interactive opt-in Wi-Fi setup
 python -m aegis wizard
 ```
 
@@ -60,6 +66,15 @@ The live wizard merely **proposes** erasing the chosen primary disk. It never
 executes a disk change. Make sure you understand the proposals before sharing
 reports publicly: default HTML reports redact disk serial and WWN, while locally
 saved JSON proposals retain disk identifiers and are created with mode 0600.
+
+Connectivity checks require access to public HTTPS endpoints and do not guarantee
+that package mirrors are reachable. If connectivity is unverified, possible causes
+include no connection, DNS, incorrect system clock, captive portal and network
+restrictions. On the official Arch ISO the setup prompt opens `iwctl` (iwd); on
+a running NetworkManager system it prefers `nmtui connect`. Any passwords are
+handled by those tools, not by AEGIS. Declining leaves the network unchanged.
+The actual installed system must receive its own verified persistent network
+configuration; the live ISO connection alone is not sufficient.
 
 An editable Python package can be installed into a private venv via `python -m
 pip install -e .`. On the official Arch ISO, installing a package or unpacking

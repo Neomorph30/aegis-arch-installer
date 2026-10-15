@@ -10,6 +10,7 @@ import sys
 from typing import Any
 
 from .hardware import HardwareInspectionError, inspect
+from .network import NetworkSetupError, interactive_preflight, network_preflight, print_network_status, launch_wifi_setup
 from .planner import PlanError, build_storage_plan
 from .profiles import recommend
 from .reporting import html_report, public_view
@@ -124,17 +125,23 @@ def wizard(inventory_file: str | None = None) -> int:
 def menu(inventory_file: str | None = None) -> int:
     """Minimal keyboard-accessible first screen for the live environment.
 
-    No installation execution, privileged operation, or network activity exists.
+    No installation execution or disk operations. Network changes require consent.
     """
     print("\nAEGIS // SECURE ARCH INSTALLER — DEVELOPER PREVIEW 0.2")
-    print("NON-DESTRUCTIVE: this build cannot install an operating system.\n")
+    print("NO DISK WRITES: this build cannot install an operating system.\n")
+    if inventory_file is None:
+        print("\nNETWORK PREFLIGHT (optional network setup only)" )
+        interactive_preflight()
+    else:
+        print("Using fixture inventory: real network preflight skipped.")
     while True:
         print("1) Inspect detected hardware")
         print("2) Plan storage using guided wizard (read-only)")
         print("3) View secure gaming profile (advisory)")
         print("4) View secure workstation profile (advisory)")
         print("5) Exit")
-        choice = input("Select [1-5]: ").strip()
+        print("6) Check internet / configure Wi-Fi")
+        choice = input("Select [1-6]: ").strip()
         if choice == "5" or not choice:
             print("Exiting without changes.")
             return 0
@@ -145,6 +152,8 @@ def menu(inventory_file: str | None = None) -> int:
             _print_devices(data.get("disks", []))
         elif choice == "2":
             wizard(inventory_file)
+        elif choice == "6":
+            interactive_preflight()
         elif choice in ("3", "4"):
             profile = "secure-gaming" if choice == "3" else "secure-workstation"
             print(json.dumps(recommend(_inventory(inventory_file), profile), indent=2))
@@ -154,7 +163,7 @@ def menu(inventory_file: str | None = None) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="aegis", description="AEGIS developer preview — READ ONLY")
+    parser = argparse.ArgumentParser(prog="aegis", description="AEGIS developer preview — NO DISK WRITES")
     sub = parser.add_subparsers(dest="command")
     p_menu = sub.add_parser("menu", help="Interactive, non-destructive main menu")
     p_menu.add_argument("--inventory", help="Use simulated hardware inventory")
@@ -173,6 +182,8 @@ def main(argv: list[str] | None = None) -> int:
     p_profile = sub.add_parser("profile", help="Show proposed software/security profile; no changes")
     p_profile.add_argument("--name", choices=["secure-workstation", "secure-gaming"], default="secure-gaming")
     p_profile.add_argument("--inventory", help="Use a simulated JSON fixture")
+    p_network = sub.add_parser("network", help="Check HTTPS connectivity; opt-in interactive Wi-Fi setup")
+    p_network.add_argument("--connect", action="store_true", help="Offer interactive Wi-Fi setup when HTTPS cannot be verified")
     p_report = sub.add_parser("report", help="Render read-only HTML plan report")
     p_report.add_argument("--plan", required=True)
     p_report.add_argument("--output", required=True)
@@ -205,11 +216,18 @@ def main(argv: list[str] | None = None) -> int:
             return wizard(args.inventory)
         elif args.command == "profile":
             print(json.dumps(recommend(_inventory(args.inventory), args.name), indent=2))
+        elif args.command == "network":
+            if args.connect:
+                if not sys.stdin.isatty() or not sys.stdout.isatty():
+                    raise NetworkSetupError("Interactive Wi-Fi setup requires a local terminal")
+                interactive_preflight()
+            else:
+                print_network_status(network_preflight())
         elif args.command == "report":
             plan = _load_json(args.plan)
             _write_new(args.output, html_report(plan, shareable=not args.private))
             print("Non-executed planning report saved:", args.output)
-    except (HardwareInspectionError, PlanError, OSError, ValueError, KeyError, TypeError) as exc:
+    except (HardwareInspectionError, NetworkSetupError, PlanError, OSError, ValueError, KeyError, TypeError) as exc:
         print(f"AEGIS: {exc}", file=sys.stderr)
         return 2
     except (KeyboardInterrupt, EOFError):

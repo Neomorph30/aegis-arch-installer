@@ -22,15 +22,21 @@ class GuardrailTests(unittest.TestCase):
         self.assertFalse((ROOT / "aegis" / "executor.py").exists())
         self.assertFalse((ROOT / "aegis" / "partitioner.py").exists())
 
-    def test_subprocess_calls_are_confined_to_hardware_probe(self):
+    def test_subprocess_calls_confined_to_audited_modules(self):
         for file in (ROOT / "aegis").glob("*.py"):
             tree = ast.parse(file.read_text())
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
                     if any(alias.name == "subprocess" for alias in node.names):
-                        self.assertEqual(file.name, "hardware.py")
+                        self.assertIn(file.name, {"hardware.py", "network.py"})
                 if isinstance(node, ast.ImportFrom) and node.module == "subprocess":
                     self.fail(f"Unexpected subprocess import: {file}")
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                    if isinstance(node.func.value, ast.Name) and node.func.value.id == "subprocess":
+                        self.assertEqual(node.func.attr, "run")
+                        self.assertIn(file.name, {"hardware.py", "network.py"})
+                        self.assertFalse(any(k.arg == "shell" and isinstance(k.value, ast.Constant)
+                                             and k.value.value is True for k in node.keywords))
 
     def test_probes_are_explicitly_allowlisted(self):
         with self.assertRaises(hardware.HardwareInspectionError):

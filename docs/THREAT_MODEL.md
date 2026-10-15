@@ -10,6 +10,16 @@
 - Remote lockout from unsafe firewall changes.
 - Unreliable upgrades that break encrypted boot or driver availability.
 
+## Network onboarding boundary
+
+- The opt-in Wi-Fi onboarding command can change the current network connection;
+  it requires local-terminal confirmation and delegates all credential entry to
+  `nmtui` or `iwctl`. It has no arbitrary command arguments or shell execution.
+- HTTPS failure is not evidence that the machine is offline; captive portals,
+  DNS, TLS, proxy policy and the system clock can produce false negatives.
+- AEGIS does not store SSIDs, credentials or connection logs, and does not
+  configure persistence for the eventual installed system in this phase.
+
 ## Limits
 
 - An unlocked and fully compromised root account can bypass many controls.
