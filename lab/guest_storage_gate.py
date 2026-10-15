@@ -18,12 +18,7 @@ class GuestStorageGateError(ValueError):
     """The guest's storage observation does not satisfy the lab contract."""
 
 
-def validate_lab_primary(
-    observation: dict[str, Any],
-    *,
-    expected_serial: str = PRIMARY_SERIAL,
-    expected_size_bytes: int = PRIMARY_BYTES,
-) -> dict[str, Any]:
+def validate_lab_primary(observation: dict[str, Any]) -> dict[str, Any]:
     """Return a review record only for one exact, unused lab primary disk.
 
     A successful result is eligibility for a *separate future one-use consent
@@ -52,7 +47,7 @@ def validate_lab_primary(
             raise GuestStorageGateError("Missing block-device type")
         paths.add(path)
         all_nodes.append(node)
-        if kind == "disk" and node.get("serial") == expected_serial:
+        if kind == "disk" and node.get("serial") == PRIMARY_SERIAL:
             serial_matches.append(node)
 
         for field in ("mountpoints", "holders"):
@@ -89,7 +84,7 @@ def validate_lab_primary(
         raise GuestStorageGateError("Secondary lab disk must match its exact capacity and be read-only")
 
     target = serial_matches[0]
-    if target.get("type") != "disk" or target.get("size") != expected_size_bytes:
+    if target.get("type") != "disk" or target.get("size") != PRIMARY_BYTES:
         raise GuestStorageGateError("Lab primary disk type or exact capacity does not match")
     if target.get("ro") not in (False, 0):
         raise GuestStorageGateError("Lab primary disk is read-only or its state is unknown")
@@ -97,7 +92,7 @@ def validate_lab_primary(
         raise GuestStorageGateError("Removable primary targets are forbidden")
     if target.get("ambiguous") is not False:
         raise GuestStorageGateError("Lab primary identity is ambiguous")
-    if not isinstance(target.get("serial"), str) or target["serial"] != expected_serial:
+    if not isinstance(target.get("serial"), str) or target["serial"] != PRIMARY_SERIAL:
         raise GuestStorageGateError("Stable lab primary serial is missing")
 
     for node in all_nodes:
