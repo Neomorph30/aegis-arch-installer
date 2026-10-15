@@ -104,8 +104,6 @@ def verify_storage_plan_integrity(plan: dict[str, Any]) -> bool:
 
 def _partition_summary(children: Any) -> list[dict[str, Any]]:
     """Validate child topology instead of silently dropping ambiguous observations."""
-    if children is None:
-        return []
     if not isinstance(children, list):
         raise PlanError("Inventory contains a malformed partition tree")
     result: list[dict[str, Any]] = []
@@ -142,7 +140,9 @@ def _partition_summary(children: Any) -> list[dict[str, Any]]:
             "mountpoints": mounts,
             "partuuid": child.get("partuuid"),
         })
-        result.extend(_partition_summary(child.get("children", [])))
+        if "children" not in child or not isinstance(child["children"], list):
+            raise PlanError("Inventory is missing a valid nested partition topology")
+        result.extend(_partition_summary(child["children"]))
     return result
 
 
@@ -175,6 +175,8 @@ def _disk_identity(disk: dict[str, Any]) -> dict[str, Any]:
             mounts.append(mount)
     else:
         raise PlanError("Inventory contains malformed disk mountpoint data")
+    if "children" not in disk or not isinstance(disk["children"], list):
+        raise PlanError("Inventory is missing a valid physical-disk child topology")
     return {
         "path": disk.get("path"),
         "model": str(disk.get("model") or "").strip(),
@@ -186,7 +188,7 @@ def _disk_identity(disk: dict[str, Any]) -> dict[str, Any]:
         "read_only": _observed_bool(disk, "ro"),
         "hotplug": _observed_bool(disk, "hotplug"),
         "mountpoints": [m for m in mounts if isinstance(m, str) and m.strip()],
-        "current_partitions": _partition_summary(disk.get("children", [])),
+        "current_partitions": _partition_summary(disk["children"]),
     }
 
 
