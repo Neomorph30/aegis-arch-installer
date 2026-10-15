@@ -117,11 +117,8 @@ def wizard(inventory_file: str | None = None) -> int:
                 return 2
             print("Secondary action: 1) preserve [default], 2) unlock existing LUKS, 3) propose erase")
             actions = {"1": "preserve", "2": "unlock-existing", "3": "erase"}
-            action_index = _choose("Action number [1-3]: ", 3)
-            if action_index is None:
-                print("Cancelled. No changes made.")
-                return 0
-            secondary_action = actions[str(action_index + 1)]
+            action_index = _choose("Action number [1-3, Enter = preserve]: ", 3)
+            secondary_action = actions[str((action_index if action_index is not None else 0) + 1)]
     fs_index = _choose("Root filesystem: 1) Btrfs [default], 2) ext4: ", 2)
     filesystem = "btrfs" if fs_index is None or fs_index == 0 else "ext4"
     try:
