@@ -34,6 +34,7 @@ SWTPM = "swtpm"
 PRIMARY_BYTES = 24 * 1024**3
 SECONDARY_BYTES = 8 * 1024**3
 ISO_MAX_BYTES = 8 * 1024**3
+NETWORK_MODES = {"disabled", "user-nat-explicit"}
 
 
 class LabError(RuntimeError):
@@ -164,9 +165,18 @@ def prepare_workspace(workspace: Path, config: LabConfig, firmware: tuple[Path, 
     return result
 
 
-def command_lines(config: LabConfig, firmware: tuple[Path, Path], prepared: dict[str, Path], *, interactive: bool = False) -> tuple[list[str], list[str]]:
+def command_lines(
+    config: LabConfig,
+    firmware: tuple[Path, Path],
+    prepared: dict[str, Path],
+    *,
+    interactive: bool = False,
+    network_mode: str = "disabled",
+) -> tuple[list[str], list[str]]:
     """Construct hard-coded QEMU options; no user-supplied QEMU options."""
     config.validate()
+    if network_mode not in NETWORK_MODES:
+        raise LabError("Unsupported network mode; choose disabled or explicit user-mode NAT")
     # Only accept previously generated canonical basenames under one workspace.
     folder = prepared["primary"].parent
     required = {"primary": "primary.raw", "secondary": "secondary.raw", "vars": "OVMF_VARS.fd", "tpm_dir": "tpm-state", "tpm_sock": "tpm.sock", "qmp_sock": "qmp.sock"}
@@ -183,7 +193,9 @@ def command_lines(config: LabConfig, firmware: tuple[Path, Path], prepared: dict
            "--ctrl", f"type=unixio,path={prepared['tpm_sock']}", "--flags", "startup-clear"]
     qemu = [QEMU, "-no-user-config", "-nodefaults", "-machine", "q35,accel=tcg",
             "-cpu", "max", "-m", str(config.ram_mib), "-smp", str(config.cpus),
-            "-display", "gtk" if interactive else "none", "-monitor", "none", "-serial", "none", "-nic", "none", "-device", "VGA",
+            "-display", "gtk" if interactive else "none", "-monitor", "none", "-serial", "none",
+            "-nic", "none" if network_mode == "disabled" else "user,model=virtio-net-pci",
+            "-device", "VGA",
             "-qmp", f"unix:{prepared['qmp_sock']},server=on,wait=off",
             "-drive", f"if=pflash,format=raw,readonly=on,file={firmware[0]}",
             "-drive", f"if=pflash,format=raw,file={prepared['vars']}",
@@ -255,11 +267,19 @@ def _finish(proc: subprocess.Popen | None) -> None:
             proc.wait(timeout=5)
 
 
-def launch(config: LabConfig, iso: Path | None = None, *, iso_sha256: str | None = None,
-           smoke: bool = True,
-           popen: Callable[..., subprocess.Popen] = subprocess.Popen) -> dict[str, object]:
+def launch(
+    config: LabConfig,
+    iso: Path | None = None,
+    *,
+    iso_sha256: str | None = None,
+    smoke: bool = True,
+    network_mode: str = "disabled",
+    popen: Callable[..., subprocess.Popen] = subprocess.Popen,
+) -> dict[str, object]:
     """Launch the disposable VM; always clean up state and processes."""
     config.validate()
+    if network_mode not in NETWORK_MODES:
+        raise LabError("Unsupported network mode; choose disabled or explicit user-mode NAT")
     if os.name != "posix" or os.geteuid() == 0:
         raise LabError("Run lab as a non-root Linux user")
     available = dependencies()
@@ -271,7 +291,7 @@ def launch(config: LabConfig, iso: Path | None = None, *, iso_sha256: str | None
     with tempfile.TemporaryDirectory(prefix="aegis-lab-", dir="/tmp") as work:
         folder = Path(work)
         paths = prepare_workspace(folder, config, firmware, iso, iso_sha256=iso_sha256)
-        tpm_args, vm_args = command_lines(config, firmware, paths, interactive=not smoke)
+        tpm_args, vm_args = command_lines(config, firmware, paths, interactive=not smoke, network_mode=network_mode)
         tpm_proc = None
         vm_proc = None
         try:
@@ -303,11 +323,15 @@ def launch(config: LabConfig, iso: Path | None = None, *, iso_sha256: str | None
                         raise LabError("QEMU exited during launch smoke interval")
                     return {"status": "LAUNCH_SMOKE_PASSED", "seconds": config.seconds,
                             "guest_boot_verified": False, "installation_performed": False,
-                            "guest_network_enabled": False, "guest_disks": 2,
-                            "virtual_tpm_requested": True, **evidence}
+                            "network_mode": network_mode,
+                            "guest_network_enabled": network_mode == "user-nat-explicit",
+                            "inbound_port_forwarding_enabled": False,
+                            "guest_disks": 2, "virtual_tpm_requested": True, **evidence}
                 rc = vm_proc.wait()
                 return {"status": "VM_EXITED", "exit_code": rc, "guest_boot_verified": False,
-                        "installation_performed": False, "guest_network_enabled": False}
+                        "installation_performed": False, "network_mode": network_mode,
+                        "guest_network_enabled": network_mode == "user-nat-explicit",
+                        "inbound_port_forwarding_enabled": False}
         except (LabError, OSError) as exc:
             # Preserve bounded emulator diagnostics before TemporaryDirectory cleanup.
             # These logs contain emulator errors, not credentials or user secrets.
@@ -337,6 +361,8 @@ def main(argv: list[str] | None = None) -> int:
     group.add_argument("--run", action="store_true", help="start interactive VM; Ctrl+C cleans up disposable state")
     parser.add_argument("--iso", type=Path, help="optional local Arch ISO to verify and copy into private lab")
     parser.add_argument("--iso-sha256", help="expected SHA-256 from an independently trusted Arch download/checksum source")
+    parser.add_argument("--network-mode", choices=sorted(NETWORK_MODES), default="disabled",
+                        help="disabled by default; user-nat-explicit enables outbound guest NAT without port forwarding")
     parser.add_argument("--seconds", type=float, default=5.0, help="smoke interval (1–30 seconds)")
     parser.add_argument("--ram-mib", type=int, default=2048)
     parser.add_argument("--cpus", type=int, default=2)
@@ -352,7 +378,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         result = launch(LabConfig(ram_mib=args.ram_mib, cpus=args.cpus, seconds=args.seconds),
-                        args.iso, iso_sha256=args.iso_sha256, smoke=args.smoke)
+                        args.iso, iso_sha256=args.iso_sha256, smoke=args.smoke,
+                        network_mode=args.network_mode)
     except (LabError, OSError) as exc:
         print(f"AEGIS lab refused/failed: {exc}", file=sys.stderr)
         return 2
