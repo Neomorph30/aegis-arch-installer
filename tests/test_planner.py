@@ -8,10 +8,10 @@ def inventory():
     return {"disks": [
         {"path": "/dev/nvme0n1", "size": 1000 * 10**9, "type": "disk", "serial": "PRIMARY-001",
          "model": "Example NVMe", "tran": "nvme", "rm": False, "ro": False, "hotplug": False, "mountpoints": [None],
-         "children": [{"path": "/dev/nvme0n1p1", "fstype": "vfat", "mountpoints": []}]},
+         "children": [{"path": "/dev/nvme0n1p1", "fstype": "vfat", "mountpoints": [], "children": []}]},
         {"path": "/dev/sdb", "size": 2000 * 10**9, "type": "disk", "serial": "SECONDARY-002",
          "model": "Example SATA", "tran": "sata", "rm": False, "ro": False, "hotplug": False, "mountpoints": [None],
-         "children": [{"path": "/dev/sdb1", "fstype": "crypto_LUKS", "mountpoints": []}]},
+         "children": [{"path": "/dev/sdb1", "fstype": "crypto_LUKS", "mountpoints": [], "children": []}]},
     ]}
 
 
