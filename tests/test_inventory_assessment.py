@@ -101,6 +101,8 @@ class InventoryAssessmentTests(unittest.TestCase):
     def test_unknown_mount_holder_and_state_shapes_block(self):
         cases = [
             disk(mountpoints={"root": "/"}),
+            disk(mountpoints=["   "]),
+            disk(holders=["   "]),
             disk(holders=[42]),
             disk(active_swap="false"),
             disk(ambiguous="no"),
