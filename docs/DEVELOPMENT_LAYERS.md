@@ -67,7 +67,7 @@ Read-only hardware probes, storage proposals, Btrfs/ext4 layout proposals, TUI w
 ## Bootable secure Arch in a virtual machine
 
 ### Layer 07 — Minimal Arch installation engine
-**State: NOT STARTED. Depends on Layer 06.**
+**State: PARTIAL; a pure guest preflight specification and negative tests exist, but no guest command is executed and no Arch installation has been tested. Depends on Layer 06.**
 - On *disposable virtual disks only*: partition, create a root LUKS2 container with temporary/recovery credentials, format Btrfs, mount, `pacstrap`, set locale/timezone/users, generate fstab/crypttab/initramfs and provision initial UEFI boot.
 - Pin expected package inputs and verify output rather than trusting process exit alone.
 **Exit:** boots a minimal Arch VM from encrypted root and withstands interrupted install/retry tests; all state reported accurately.
