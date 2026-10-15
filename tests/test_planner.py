@@ -1,6 +1,6 @@
 import unittest
 
-from aegis.planner import PlanError, build_storage_plan
+from aegis.planner import PlanError, build_storage_plan, verify_storage_plan_integrity
 from aegis.reporting import html_report, public_view
 
 
@@ -61,6 +61,35 @@ class PlannerTests(unittest.TestCase):
         self.assertNotIn("<script>", output)
         self.assertIn("&lt;script&gt;", output)
         self.assertEqual(public_view({"password": "pw"})["password"], "[REDACTED]")
+
+
+    def test_plan_digest_detects_tampering(self):
+        plan = build_storage_plan(inventory(), "/dev/nvme0n1")
+        self.assertTrue(verify_storage_plan_integrity(plan))
+        plan["actions"][0]["target"] = "/dev/sdb"
+        self.assertFalse(verify_storage_plan_integrity(plan))
+
+    def test_duplicate_identity_anywhere_blocks_plan(self):
+        data = inventory()
+        data["disks"].append({
+            "path": "/dev/sdc", "size": 500 * 10**9, "type": "disk",
+            "serial": "PRIMARY-001", "rm": False, "ro": False,
+        })
+        with self.assertRaises(PlanError):
+            build_storage_plan(data, "/dev/nvme0n1")
+
+    def test_malformed_disk_entry_blocks_plan(self):
+        data = inventory()
+        data["disks"].append("not-a-disk-object")
+        with self.assertRaises(PlanError):
+            build_storage_plan(data, "/dev/nvme0n1")
+
+    def test_plan_has_inventory_fingerprint_and_digest(self):
+        plan = build_storage_plan(inventory(), "/dev/nvme0n1")
+        self.assertEqual(len(plan["inventory_fingerprint"]), 64)
+        self.assertEqual(len(plan["plan_digest"]), 64)
+        self.assertEqual(plan["schema_version"], "0.3")
+        self.assertFalse(plan["execution_enabled"])
 
     def test_no_executor_available(self):
         # Safety invariant: the preview package exposes no disk-mutation subsystem.
