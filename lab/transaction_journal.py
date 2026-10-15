@@ -215,11 +215,13 @@ class TransactionJournal:
         _validate_event(probe, 1, "0" * 64)
 
         flags = os.O_RDWR | os.O_APPEND | os.O_CLOEXEC | os.O_NOFOLLOW
+        created = False
         try:
             fd = os.open(self.path, flags)
         except FileNotFoundError:
             try:
                 fd = os.open(self.path, flags | os.O_CREAT | os.O_EXCL, 0o600)
+                created = True
             except FileExistsError:
                 fd = os.open(self.path, flags)
         except OSError as exc:
@@ -250,6 +252,14 @@ class TransactionJournal:
             while written < len(line):
                 written += os.write(fd, line[written:])
             os.fsync(fd)
+            if created:
+                # Persist the new directory entry as well as the journal contents.
+                dir_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | getattr(os, "O_DIRECTORY", 0)
+                dir_fd = os.open(self.path.parent, dir_flags)
+                try:
+                    os.fsync(dir_fd)
+                finally:
+                    os.close(dir_fd)
             return event
         except OSError as exc:
             raise JournalError("Journal append failed; inspect and preserve the journal before any recovery") from exc
