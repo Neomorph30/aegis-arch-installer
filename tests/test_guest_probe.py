@@ -82,6 +82,18 @@ class GuestProbeTests(unittest.TestCase):
         with self.assertRaisesRegex(GuestProbeError, "Read-only lsblk probe failed"):
             observe_guest(sys_root=self.sys, proc_root=self.proc, run=timeout)
 
+
+    def test_unreadable_holder_state_is_not_reported_as_empty(self):
+        import shutil
+        shutil.rmtree(self.sys / "class/block/vda/holders")
+        result = self.observe()
+        self.assertEqual(result["devices"][0]["holders"], ["UNVERIFIED"])
+
+    def test_unreadable_swap_state_fails_closed(self):
+        (self.proc / "swaps").unlink()
+        with self.assertRaisesRegex(GuestProbeError, "active swap state"):
+            self.observe()
+
     def test_unexpected_schema_fails_closed(self):
         with self.assertRaisesRegex(GuestProbeError, "unexpected schema"):
             observe_guest(sys_root=self.sys, proc_root=self.proc,
