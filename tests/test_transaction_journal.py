@@ -94,6 +94,13 @@ class TransactionJournalTests(unittest.TestCase):
         with self.assertRaisesRegex(JournalError, "event hash is malformed"):
             parse_journal((json.dumps(event) + "\n").encode())
 
+    def test_malformed_field_types_raise_journal_error(self):
+        self.journal.append("phase_intent", phase="preflight", status="STARTED")
+        event = self.journal.read()[0]
+        event["phase"] = []
+        with self.assertRaisesRegex(JournalError, "phase is not allowlisted"):
+            parse_journal((json.dumps(event) + "\n").encode())
+
     def test_oversized_journal_is_rejected(self):
         with self.assertRaisesRegex(JournalError, "exceeds the supported evidence size"):
             parse_journal(b"x" * (1024 * 1024 + 1))
