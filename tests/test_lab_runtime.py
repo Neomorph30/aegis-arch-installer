@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 from pathlib import Path
+import tempfile
 import unittest
 
 from lab.runtime import LabError, main, type_qmp_command
@@ -39,6 +41,54 @@ class GuestPreflightLauncherTests(unittest.TestCase):
             "running hook archiso_loop_mnt root=/dev/ram0 early hook udev"
         ))
         self.assertFalse(_has_arch_live_root_prompt("Arch Linux install medium"))
+
+    def test_failure_screenshot_is_preserved_only_to_private_opt_in_directory(self):
+        from lab.runtime import _preserve_failure_screenshot
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            screenshot = root / "screen.png"
+            screenshot.write_bytes(b"diagnostic screenshot bytes")
+            output = root / "diagnostics"
+            output.mkdir(mode=0o700)
+            with patch.dict(os.environ, {"AEGIS_LAB_DIAGNOSTICS_DIR": str(output)}):
+                self.assertEqual(
+                    _preserve_failure_screenshot(screenshot),
+                    "final guest screen preserved as guest-screen.png",
+                )
+            saved = output / "guest-screen.png"
+            self.assertEqual(saved.read_bytes(), screenshot.read_bytes())
+            self.assertEqual(saved.stat().st_mode & 0o777, 0o600)
+
+    def test_failure_screenshot_diagnostics_are_opt_in_and_never_overwrite(self):
+        from lab.runtime import _preserve_failure_screenshot
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            screenshot = root / "screen.png"
+            screenshot.write_bytes(b"screen")
+            output = root / "diagnostics"
+            output.mkdir(mode=0o700)
+            with patch.dict(os.environ, {}, clear=True):
+                self.assertIsNone(_preserve_failure_screenshot(screenshot))
+            target = output / "guest-screen.png"
+            target.write_bytes(b"existing evidence")
+            with patch.dict(os.environ, {"AEGIS_LAB_DIAGNOSTICS_DIR": str(output)}):
+                self.assertIsNone(_preserve_failure_screenshot(screenshot))
+            self.assertEqual(target.read_bytes(), b"existing evidence")
+
+    def test_failure_screenshot_rejects_non_private_diagnostics_directory(self):
+        from lab.runtime import _preserve_failure_screenshot
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            screenshot = root / "screen.png"
+            screenshot.write_bytes(b"screen")
+            output = root / "diagnostics"
+            output.mkdir(mode=0o755)
+            with patch.dict(os.environ, {"AEGIS_LAB_DIAGNOSTICS_DIR": str(output)}):
+                self.assertIsNone(_preserve_failure_screenshot(screenshot))
+            self.assertFalse((output / "guest-screen.png").exists())
 
     def test_qmp_typing_refuses_uppercase_and_unapproved_characters_before_connecting(self):
         for command in ("echo OK", "python /tmp/a.py", "echo $HOME", ""):
