@@ -91,6 +91,16 @@ class GuestPreflightLauncherTests(unittest.TestCase):
                 self.assertIsNone(_preserve_failure_screenshot(screenshot))
             self.assertFalse((output / "guest-screen.png").exists())
 
+    def test_arch_login_banner_is_not_mistaken_for_prompt(self):
+        from lab.runtime import _arch_live_root_prompt_line
+
+        banner = (
+            "arch linux 7.2.7-archiso-1 tty1 archiso login: root "
+            "automatic login to install arch linux follow the installation guide"
+        )
+        self.assertIsNone(_arch_live_root_prompt_line(banner))
+        self.assertEqual(_arch_live_root_prompt_line("root@archiso ~ #"), "root@archiso ~ #")
+
     def test_qmp_typing_refuses_uppercase_and_unapproved_characters_before_connecting(self):
         for command in ("echo OK", "python /tmp/a.py", "echo $HOME", ""):
             with self.subTest(command=command), self.assertRaises(LabError):
