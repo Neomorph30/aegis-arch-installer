@@ -163,9 +163,26 @@ class ReportSafetyTests(unittest.TestCase):
         self.assertIn("&lt;script&gt;", rendered)
 
     def test_sensitive_keys_redacted(self):
-        redacted = public_view({"password": "not-safe", "tpm_pin": "123456", "nested": {"secret": "abc"}})
+        values = {
+            "password": "not-safe",
+            "tpm_pin": "123456",
+            "nested": {"secret": "abc"},
+            "TPM-PIN": "pin-here",
+            "private-key": "private-here",
+            "api key": "api-here",
+            "luks_recovery_key": "recovery-here",
+        }
+        redacted = public_view(values)
         self.assertEqual(redacted["password"], "[REDACTED]")
         self.assertEqual(redacted["nested"]["secret"], "[REDACTED]")
+        for key, secret in (
+            ("TPM-PIN", "pin-here"),
+            ("private-key", "private-here"),
+            ("api key", "api-here"),
+            ("luks_recovery_key", "recovery-here"),
+        ):
+            with self.subTest(key=key):
+                self.assertEqual(redacted[key], "[REDACTED]")
 
 
 class ProfileTests(unittest.TestCase):
