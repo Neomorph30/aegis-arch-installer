@@ -144,18 +144,20 @@ class GuestStorageGateTests(unittest.TestCase):
         import json
         from lab.guest_storage_gate import observe_guest_storage
         payload = {"blockdevices": [
+            # Real lsblk JSON omits "children" for leaf devices, including the
+            # live ISO's ROM/loop devices and blank virtual disks.
             {"path": "/dev/sr0", "type": "rom", "serial": "ARCH-ISO",
              "size": 700 * 1024**2, "ro": True, "rm": True,
-             "mountpoints": [None], "maj:min": "11:0", "children": []},
+             "mountpoints": [None], "maj:min": "11:0"},
             {"path": "/dev/loop0", "type": "loop", "serial": None,
              "size": 700 * 1024**2, "ro": True, "rm": False,
-             "mountpoints": [None], "maj:min": "7:0", "children": []},
+             "mountpoints": [None], "maj:min": "7:0"},
             {"path": "/dev/vda", "type": "disk", "serial": "AEGIS-LAB-PRIMARY",
              "size": PRIMARY_BYTES, "ro": False, "rm": False,
-             "mountpoints": [None], "maj:min": "252:0", "children": []},
+             "mountpoints": [None], "maj:min": "252:0"},
             {"path": "/dev/vdb", "type": "disk", "serial": "AEGIS-LAB-SECONDARY",
              "size": SECONDARY_BYTES, "ro": True, "rm": False,
-             "mountpoints": [None], "maj:min": "252:1", "children": []},
+             "mountpoints": [None], "maj:min": "252:1"},
         ]}
         run.return_value = SimpleNamespace(stdout=json.dumps(payload))
         observed = observe_guest_storage()
