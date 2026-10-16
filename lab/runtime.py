@@ -343,10 +343,12 @@ def launch(
     iso: Path | None = None,
     *,
     iso_sha256: str | None = None,
+    payload_iso: Path | None = None,
     smoke: bool = True,
     network_mode: str = "disabled",
     observe_boot: bool = False,
     observe_live: bool = False,
+    observe_guest_preflight: bool = False,
     live_timeout_seconds: int = 120,
     popen: Callable[..., subprocess.Popen] = subprocess.Popen,
 ) -> dict[str, object]:
@@ -354,14 +356,18 @@ def launch(
     config.validate()
     if network_mode not in NETWORK_MODES:
         raise LabError("Unsupported network mode; choose disabled or explicit user-mode NAT")
-    if (observe_boot or observe_live) and iso is None:
+    if (observe_boot or observe_live or observe_guest_preflight) and iso is None:
         raise LabError("Boot observation requires a verified Arch ISO")
+    if observe_guest_preflight and payload_iso is None:
+        raise LabError("Guest preflight observation requires a separate read-only payload ISO")
+    if payload_iso is not None and not observe_guest_preflight:
+        raise LabError("A guest payload is accepted only for explicit guest-preflight observation")
     if (observe_boot or observe_live) and shutil.which("tesseract") is None:
         raise LabError("Boot observation requires Tesseract OCR; no boot claim will be made")
     if isinstance(live_timeout_seconds, bool) or not isinstance(live_timeout_seconds, int) or not 30 <= live_timeout_seconds <= 240:
         raise LabError("Live boot timeout must be an integer from 30 to 240 seconds")
-    if observe_boot and observe_live:
-        raise LabError("Choose boot-menu observation or live-environment observation, not both")
+    if sum((observe_boot, observe_live, observe_guest_preflight)) > 1:
+        raise LabError("Choose only one boot observation mode")
     if os.name != "posix" or os.geteuid() == 0:
         raise LabError("Run lab as a non-root Linux user")
     available = dependencies()
@@ -372,10 +378,12 @@ def launch(
     # Use OS-controlled secure name generation, independent of TMPDIR overrides.
     with tempfile.TemporaryDirectory(prefix="aegis-lab-", dir="/tmp") as work:
         folder = Path(work)
-        paths = prepare_workspace(folder, config, firmware, iso, iso_sha256=iso_sha256)
+        paths = prepare_workspace(folder, config, firmware, iso, iso_sha256=iso_sha256,
+                                  payload_iso=payload_iso)
         tpm_args, vm_args = command_lines(config, firmware, paths, interactive=not smoke,
                                            network_mode=network_mode,
-                                           observe_boot=(observe_boot or observe_live))
+                                           observe_boot=(observe_boot or observe_live or observe_guest_preflight),
+                                           observe_guest_preflight=observe_guest_preflight)
         tpm_proc = None
         vm_proc = None
         try:
