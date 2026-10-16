@@ -316,22 +316,35 @@ def _guest_screen_ocr(screenshot: Path, *, timeout: int = 20, preflight_result: 
     retry the same immutable screenshot with automatic page segmentation before
     concluding that the guest has not reached a shell or emitted its marker.
     """
-    first = subprocess.run(
-        ["tesseract", str(screenshot), "stdout", "--psm", "6"],
-        check=True, capture_output=True, text=True, timeout=timeout,
-    ).stdout
-    normalized_first = " ".join(first.casefold().split())
-    if preflight_result:
-        if ("aegis preflight pass" in normalized_first
-                or "aegis preflight blocked" in normalized_first):
-            return first
-    elif _has_arch_live_root_prompt(first):
-        return first
+    first: str | None
+    try:
+        first = subprocess.run(
+            ["tesseract", str(screenshot), "stdout", "--psm", "6"],
+            check=True, capture_output=True, text=True, timeout=timeout,
+        ).stdout
+    except subprocess.TimeoutExpired:
+        # A slow single-block OCR pass must not prevent trying the alternate
+        # layout that can recover a prompt or marker from the same screenshot.
+        first = None
 
-    second = subprocess.run(
-        ["tesseract", str(screenshot), "stdout", "--psm", "3"],
-        check=True, capture_output=True, text=True, timeout=timeout,
-    ).stdout
+    if first is not None:
+        normalized_first = " ".join(first.casefold().split())
+        if preflight_result:
+            if ("aegis preflight pass" in normalized_first
+                    or "aegis preflight blocked" in normalized_first):
+                return first
+        elif _has_arch_live_root_prompt(first):
+            return first
+
+    try:
+        second = subprocess.run(
+            ["tesseract", str(screenshot), "stdout", "--psm", "3"],
+            check=True, capture_output=True, text=True, timeout=timeout,
+        ).stdout
+    except subprocess.TimeoutExpired:
+        if first is not None:
+            return first
+        raise
     normalized_second = " ".join(second.casefold().split())
     if preflight_result:
         if ("aegis preflight pass" in normalized_second
