@@ -275,6 +275,51 @@ def query_qmp(path: Path, screenshot_path: Path | None = None) -> dict[str, obje
             return result
 
 
+def type_qmp_command(path: Path, command: str) -> None:
+    """Type a constrained lowercase shell command through QMP; no host shell is invoked."""
+    qcodes = {
+        " ": "spc", "/": "slash", ".": "dot", "-": "minus", ";": "semicolon",
+    }
+    if not command or any(
+        not (char.isascii() and (char.islower() or char.isdigit() or char in qcodes))
+        for char in command
+    ):
+        raise LabError("Guest preflight command contains unsupported characters")
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(3.0)
+        client.connect(str(path))
+        with client.makefile("rwb") as stream:
+            def receive() -> dict:
+                for _ in range(16):
+                    line = stream.readline(64 * 1024)
+                    if not line:
+                        raise LabError("QMP disconnected while typing guest command")
+                    msg = json.loads(line)
+                    if "error" in msg:
+                        raise LabError("QMP rejected guest command input")
+                    if "return" in msg or "QMP" in msg:
+                        return msg
+                raise LabError("QMP returned too many unexpected input messages")
+            if "QMP" not in receive():
+                raise LabError("QMP greeting missing while typing guest command")
+            def cmd(name: str, arguments: dict[str, object] | None = None) -> object:
+                request: dict[str, object] = {"execute": name}
+                if arguments is not None:
+                    request["arguments"] = arguments
+                stream.write(json.dumps(request).encode() + b"\\n")
+                stream.flush()
+                reply = receive()
+                if "return" not in reply:
+                    raise LabError("QMP input command did not return successfully")
+                return reply["return"]
+            cmd("qmp_capabilities")
+            for char in command:
+                key = qcodes.get(char, char)
+                cmd("send-key", {"keys": [{"type": "qcode", "data": key}], "hold-time": 80})
+                time.sleep(0.025)
+            cmd("send-key", {"keys": [{"type": "qcode", "data": "ret"}], "hold-time": 80)
+
+
 def _finish(proc: subprocess.Popen | None) -> None:
     if proc is None:
         return
