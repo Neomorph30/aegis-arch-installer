@@ -113,3 +113,136 @@ def validate_lab_primary(observation: dict[str, Any]) -> dict[str, Any]:
         "writes_performed": False,
         "note": "Preflight only. A future executor must independently re-probe and require one-use consent.",
     }
+
+def observe_guest_storage() -> dict[str, Any]:
+    """Collect a fresh read-only lsblk/sysfs/swap snapshot; unknown state fails closed."""
+    import json
+    import os
+    import stat
+    import subprocess
+    from pathlib import Path
+
+    command = [
+        "lsblk", "--json", "--bytes", "--paths",
+        "--output", "PATH,TYPE,SERIAL,SIZE,RO,RM,MOUNTPOINTS,MAJ:MIN,CHILDREN",
+    ]
+    try:
+        completed = subprocess.run(
+            command, check=True, capture_output=True, text=True, timeout=10,
+        )
+        payload = json.loads(completed.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+        raise GuestStorageGateError("Unable to obtain a fresh complete lsblk observation") from exc
+    if not isinstance(payload, dict) or not isinstance(payload.get("blockdevices"), list):
+        raise GuestStorageGateError("lsblk response is incomplete")
+
+    try:
+        swap_lines = Path("/proc/swaps").read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise GuestStorageGateError("Unable to verify active swap state") from exc
+    swap_ids: set[tuple[int, int]] = set()
+    for line in swap_lines[1:]:
+        fields = line.split()
+        if not fields:
+            continue
+        try:
+            info = os.stat(fields[0])
+        except OSError:
+            # A swap file is not a block device; its backing filesystem is still
+            # protected by the mount check. Do not treat an unreadable entry as safe.
+            if not Path(fields[0]).is_file():
+                raise GuestStorageGateError("Unable to resolve an active swap entry")
+            continue
+        if stat.S_ISBLK(info.st_mode):
+            swap_ids.add((os.major(info.st_rdev), os.minor(info.st_rdev)))
+
+    serial_counts: dict[str, int] = {}
+    def count_serial(node: Any) -> None:
+        if not isinstance(node, dict):
+            raise GuestStorageGateError("Malformed lsblk child entry")
+        serial = node.get("serial")
+        if isinstance(serial, str) and serial.strip():
+            serial_counts[serial.strip()] = serial_counts.get(serial.strip(), 0) + 1
+        children = node.get("children")
+        if not isinstance(children, list):
+            raise GuestStorageGateError("lsblk omitted child topology")
+        for child in children:
+            count_serial(child)
+
+    raw_roots = payload["blockdevices"]
+    for root in raw_roots:
+        count_serial(root)
+
+    def enrich(node: dict[str, Any]) -> dict[str, Any]:
+        path = node.get("path")
+        major_minor = node.get("maj:min")
+        if not isinstance(path, str) or not isinstance(major_minor, str) or ":" not in major_minor:
+            raise GuestStorageGateError("Device path or kernel major/minor identity is missing")
+        try:
+            major_text, minor_text = major_minor.split(":", 1)
+            identity = (int(major_text), int(minor_text))
+            sysfs = Path("/sys/dev/block") / f"{identity[0]}:{identity[1]}"
+            holders_dir = sysfs / "holders"
+            holders = sorted(entry.name for entry in holders_dir.iterdir())
+        except (ValueError, OSError) as exc:
+            raise GuestStorageGateError(f"Unable to verify sysfs holders for {path}") from exc
+
+        mounts = node.get("mountpoints")
+        if mounts is None:
+            raise GuestStorageGateError(f"Unable to verify mountpoints for {path}")
+        if not isinstance(mounts, list):
+            raise GuestStorageGateError(f"Malformed mountpoints for {path}")
+        serial = node.get("serial")
+        serial = serial.strip() if isinstance(serial, str) and serial.strip() else None
+        children = node.get("children")
+        if not isinstance(children, list):
+            raise GuestStorageGateError(f"Unable to verify child topology for {path}")
+        if not isinstance(node.get("size"), int) or isinstance(node.get("size"), bool):
+            raise GuestStorageGateError(f"Unable to verify capacity for {path}")
+        if node.get("ro") not in (0, 1, False, True) or node.get("rm") not in (0, 1, False, True):
+            raise GuestStorageGateError(f"Unable to verify read-only/removable flags for {path}")
+        kind = node.get("type")
+        if not isinstance(kind, str) or not kind:
+            raise GuestStorageGateError(f"Unable to verify type for {path}")
+        return {
+            "path": path,
+            "type": kind,
+            "serial": serial,
+            "size": node["size"],
+            "ro": bool(node["ro"]),
+            "rm": bool(node["rm"]),
+            "mountpoints": mounts,
+            "holders": holders,
+            "active_swap": identity in swap_ids,
+            "ambiguous": bool(serial and serial_counts.get(serial, 0) > 1),
+            "children": [enrich(child) for child in children],
+        }
+
+    return {"devices": [enrich(root) for root in raw_roots]}
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Read-only guest preflight entry point; it never authorizes or performs writes."""
+    import argparse
+    import json
+    parser = argparse.ArgumentParser(description="Read-only AEGIS disposable-VM storage preflight")
+    parser.add_argument("--preflight", action="store_true", help="probe live block devices and assess the fixed lab pair")
+    args = parser.parse_args(argv)
+    if not args.preflight:
+        parser.error("only --preflight is supported; storage writes are not implemented")
+    try:
+        observation = observe_guest_storage()
+        result = validate_lab_primary(observation)
+    except GuestStorageGateError as exc:
+        print(json.dumps({
+            "schema_version": 1, "status": "BLOCKED",
+            "write_authorized": False, "writes_performed": False,
+            "reason": str(exc),
+        }, sort_keys=True))
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
