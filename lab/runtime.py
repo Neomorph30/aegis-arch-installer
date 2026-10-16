@@ -512,6 +512,7 @@ def launch(
                         preflight_deadline = time.monotonic() + min(90, live_timeout_seconds)
                         preflight_attempts = 0
                         preflight_passed = False
+                        last_preflight_ocr = ""
                         while time.monotonic() < preflight_deadline:
                             preflight_attempts += 1
                             query_qmp(paths["qmp_sock"], screenshot)
@@ -525,6 +526,9 @@ def launch(
                                     raise LabError("QEMU exited while guest preflight result was pending")
                                 continue
                             normalized_ocr = " ".join(ocr.casefold().split())
+                            last_preflight_ocr = "".join(
+                                char for char in normalized_ocr if char.isalnum() or char in " .:/_-"
+                            )[:320]
                             if ("aegis preflight pass" in normalized_ocr
                                     and "write authorized false" in normalized_ocr
                                     and "writes performed false" in normalized_ocr):
@@ -536,7 +540,10 @@ def launch(
                                 raise LabError("QEMU exited before guest preflight result was observed")
                             time.sleep(2.0)
                         if not preflight_passed:
-                            raise LabError("Guest preflight success marker not observed; no write operation was run")
+                            detail = f"; last guest screen OCR: {last_preflight_ocr}" if last_preflight_ocr else ""
+                            raise LabError(
+                                "Guest preflight success marker not observed; no write operation was run" + detail
+                            )
                         evidence = {
                             "qmp_running": True,
                             "qmp_tpm_detected": True,
