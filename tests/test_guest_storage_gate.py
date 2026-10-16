@@ -90,6 +90,19 @@ class GuestStorageGateTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(GuestStorageGateError):
                 validate_lab_primary(sample)
 
+    def test_malformed_capacity_and_safety_flags_block(self):
+        cases = (
+            ("size", True),
+            ("size", -1),
+            ("ro", "false"),
+            ("rm", 2),
+        )
+        for key, value in cases:
+            sample = fixture()
+            sample["devices"][0][key] = value
+            with self.subTest(key=key, value=value), self.assertRaises(GuestStorageGateError):
+                validate_lab_primary(sample)
+
     def test_secondary_must_be_exact_and_read_only(self):
         sample = fixture()
         sample["devices"][1]["ro"] = False
