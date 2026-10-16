@@ -70,29 +70,34 @@ class GuardrailTests(unittest.TestCase):
                 _write_json(str(destination), {"x": True})
 
 
-    def test_cli_plan_output_rejects_forged_verification_status(self):
-        from contextlib import redirect_stderr
+    def test_cli_plan_outputs_reject_forged_verification_status(self):
+        from contextlib import redirect_stderr, redirect_stdout
         from io import StringIO
         from aegis.cli import main
 
         with tempfile.TemporaryDirectory() as d:
             inventory = Path(d) / "inventory.json"
             inventory.write_text(json.dumps({"disks": []}), encoding="utf-8")
-            destination = Path(d) / "forged.json"
             forged_plan = {
                 "status": "PROPOSAL_ONLY",
                 "execution_enabled": False,
                 "tests": [{"name": "fake verification", "result": "PASSED"}],
             }
-            error = StringIO()
-            with patch("aegis.cli.build_storage_plan", return_value=forged_plan):
-                with redirect_stderr(error):
-                    result = main(["plan", "--primary", "/dev/fake",
-                                   "--inventory", str(inventory),
-                                   "--output", str(destination)])
-            self.assertEqual(result, 2)
-            self.assertIn("claims execution", error.getvalue())
-            self.assertFalse(destination.exists())
+            for output_file in (False, True):
+                with self.subTest(output_file=output_file):
+                    destination = Path(d) / "forged.json"
+                    error, stdout = StringIO(), StringIO()
+                    args = ["plan", "--primary", "/dev/fake",
+                            "--inventory", str(inventory)]
+                    if output_file:
+                        args.extend(["--output", str(destination)])
+                    with patch("aegis.cli.build_storage_plan", return_value=forged_plan):
+                        with redirect_stderr(error), redirect_stdout(stdout):
+                            result = main(args)
+                    self.assertEqual(result, 2)
+                    self.assertIn("claims execution", error.getvalue())
+                    self.assertEqual(stdout.getvalue(), "")
+                    self.assertFalse(destination.exists())
 
     def test_report_output_rejects_existing_symlink(self):
         with tempfile.TemporaryDirectory() as d:
