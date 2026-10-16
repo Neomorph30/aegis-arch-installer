@@ -46,6 +46,12 @@ class GuestStorageGateTests(unittest.TestCase):
         self.assertFalse(result["write_authorized"])
         self.assertFalse(result["writes_performed"])
 
+    def test_lsblk_null_mountpoint_means_unmounted(self):
+        sample = fixture()
+        sample["devices"][0]["mountpoints"] = [None]
+        result = validate_lab_primary(sample)
+        self.assertFalse(result["write_authorized"])
+
     def test_extra_or_missing_root_disk_is_rejected(self):
         value = fixture()
         value["devices"].append(node("/dev/vdc", "HOST-DISK", 500 * 1024**3))
