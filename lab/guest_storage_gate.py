@@ -29,6 +29,8 @@ def validate_lab_primary(observation: dict[str, Any]) -> dict[str, Any]:
     roots = observation["devices"]
     if len(roots) != 2:
         raise GuestStorageGateError("Expected exactly the two lab virtual disks; extra or missing disks block writes")
+    if any(not isinstance(root, dict) or root.get("type") != "disk" for root in roots):
+        raise GuestStorageGateError("Both root devices must be whole virtual disks")
 
     all_nodes: list[dict[str, Any]] = []
     paths: set[str] = set()
@@ -79,6 +81,8 @@ def validate_lab_primary(observation: dict[str, Any]) -> dict[str, Any]:
     ]
     if len(secondary_matches) != 1:
         raise GuestStorageGateError("Expected exactly one AEGIS-LAB-SECONDARY disk")
+    if {node.get("serial") for node in roots} != {PRIMARY_SERIAL, SECONDARY_SERIAL}:
+        raise GuestStorageGateError("Root disks must have exactly the two fixed lab serials")
     secondary = secondary_matches[0]
     if secondary.get("size") != SECONDARY_BYTES or secondary.get("ro") not in (True, 1):
         raise GuestStorageGateError("Secondary lab disk must match its exact capacity and be read-only")
