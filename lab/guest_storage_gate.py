@@ -180,6 +180,14 @@ def observe_guest_storage() -> dict[str, Any]:
     raw_roots = payload["blockdevices"]
     for root in raw_roots:
         count_serial(root)
+    # A booted live ISO commonly exposes its optical drive and one or more
+    # loop devices. They are not candidate installation disks. Exclude only
+    # these explicit non-disk types; unexpected disks and other root block
+    # device types remain visible to the strict validation gate.
+    candidate_roots = [
+        root for root in raw_roots
+        if isinstance(root, dict) and root.get("type") not in ("loop", "rom")
+    ]
 
     def enrich(node: dict[str, Any]) -> dict[str, Any]:
         path = node.get("path")
@@ -232,7 +240,7 @@ def observe_guest_storage() -> dict[str, Any]:
             "children": [enrich(child) for child in children],
         }
 
-    return {"devices": [enrich(root) for root in raw_roots]}
+    return {"devices": [enrich(root) for root in candidate_roots]}
 
 
 def main(argv: list[str] | None = None) -> int:
