@@ -263,6 +263,8 @@ def main(argv: list[str] | None = None) -> int:
     import json
     parser = argparse.ArgumentParser(description="Read-only AEGIS disposable-VM storage preflight")
     parser.add_argument("--preflight", action="store_true", help="probe live block devices and assess the fixed lab pair")
+    parser.add_argument("--marker", action="store_true",
+                        help="emit a short success marker for automated disposable-VM verification")
     args = parser.parse_args(argv)
     if not args.preflight:
         parser.error("only --preflight is supported; storage writes are not implemented")
@@ -276,7 +278,13 @@ def main(argv: list[str] | None = None) -> int:
             "reason": str(exc),
         }, sort_keys=True))
         return 2
-    print(json.dumps(result, sort_keys=True))
+    if args.marker:
+        if result.get("write_authorized") is not False or result.get("writes_performed") is not False:
+            print("AEGIS_PREFLIGHT_BLOCKED_UNSAFE_RESULT")
+            return 2
+        print("AEGIS_PREFLIGHT_PASS_WRITE_AUTHORIZED_FALSE_WRITES_PERFORMED_FALSE")
+    else:
+        print(json.dumps(result, sort_keys=True))
     return 0
 
 
