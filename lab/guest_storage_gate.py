@@ -146,7 +146,7 @@ def observe_guest_storage() -> dict[str, Any]:
 
     command = [
         "lsblk", "--json", "--bytes", "--paths", "--tree",
-        "--output", "PATH,TYPE,SERIAL,SIZE,RO,RM,MOUNTPOINTS,MAJ:MIN,CHILDREN",
+        "--output", "PATH,TYPE,SERIAL,SIZE,RO,RM,MOUNTPOINTS,MAJ:MIN",
     ]
     try:
         completed = subprocess.run(
