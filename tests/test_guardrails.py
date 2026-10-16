@@ -54,21 +54,30 @@ class GuardrailTests(unittest.TestCase):
                 _write_json(str(destination), {"x": True})
 
 
-    def test_json_proposal_writer_rejects_forged_verification_status(self):
+    def test_cli_plan_output_rejects_forged_verification_status(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        from aegis.cli import main
+
         with tempfile.TemporaryDirectory() as d:
+            inventory = Path(d) / "inventory.json"
+            inventory.write_text(json.dumps({"disks": []}), encoding="utf-8")
             destination = Path(d) / "forged.json"
-            proposal = {
+            forged_plan = {
                 "status": "PROPOSAL_ONLY",
                 "execution_enabled": False,
                 "tests": [{"name": "fake verification", "result": "PASSED"}],
             }
-            with self.assertRaisesRegex(ValueError, "verification status"):
-                from aegis.reporting import validate_proposal_evidence
-                validate_proposal_evidence(proposal)
-            # The generic writer remains usable for non-report JSON, while
-            # proposal commands validate before calling it.
-            _write_json(str(destination), proposal)
-            self.assertTrue(destination.exists())
+            error = StringIO()
+            with patch("aegis.cli.build_storage_plan", return_value=forged_plan):
+                with redirect_stderr(error):
+                    result = main(["plan", "--primary", "/dev/fake",
+                                   "--inventory", str(inventory),
+                                   "--output", str(destination)])
+            self.assertEqual(result, 2)
+            self.assertIn("verification status", error.getvalue())
+            self.assertFalse(destination.exists())
+
     def test_report_output_rejects_existing_symlink(self):
         with tempfile.TemporaryDirectory() as d:
             protected = Path(d) / "protected.txt"
