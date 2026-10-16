@@ -467,8 +467,8 @@ def launch(
         raise LabError("A guest payload is accepted only for explicit guest-preflight observation")
     if (observe_boot or observe_live or observe_guest_preflight) and shutil.which("tesseract") is None:
         raise LabError("Boot observation requires Tesseract OCR; no boot claim will be made")
-    if isinstance(live_timeout_seconds, bool) or not isinstance(live_timeout_seconds, int) or not 30 <= live_timeout_seconds <= 240:
-        raise LabError("Live boot timeout must be an integer from 30 to 240 seconds")
+    if isinstance(live_timeout_seconds, bool) or not isinstance(live_timeout_seconds, int) or not 30 <= live_timeout_seconds <= 480:
+        raise LabError("Live boot timeout must be an integer from 30 to 480 seconds")
     if sum((observe_boot, observe_live, observe_guest_preflight)) > 1:
         raise LabError("Choose only one boot observation mode")
     if os.name != "posix" or os.geteuid() == 0:
@@ -743,7 +743,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--guest-preflight-payload", type=Path,
                         help="separately prepared ISO containing guest_storage_gate.py as gate.py")
     parser.add_argument("--live-timeout-seconds", type=int, default=120,
-                        help="live environment observation timeout (30–240 seconds)")
+                        help="live environment observation timeout (30–480 seconds)")
     parser.add_argument("--iso", type=Path, help="optional local Arch ISO to verify and copy into private lab")
     parser.add_argument("--iso-sha256", help="expected SHA-256 from an independently trusted Arch download/checksum source")
     parser.add_argument("--network-mode", choices=sorted(NETWORK_MODES), default="disabled",
