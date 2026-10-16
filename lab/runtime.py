@@ -230,7 +230,7 @@ def command_lines(
     if "payload_iso" in prepared:
         # The guest test harness is a separate read-only optical medium, never a block target.
         qemu += ["-drive", f"if=none,id=guestpayload,media=cdrom,format=raw,readonly=on,file={prepared['payload_iso']}",
-                 "-device", "scsi-cd,bus=scsi0.0,drive=guestpayload"]
+                 "-device", "scsi-cd,bus=scsi0.0,scsi-id=1,drive=guestpayload"]
     return tpm, qemu
 
 
