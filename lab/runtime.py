@@ -290,13 +290,17 @@ GUEST_PREFLIGHT_COMMAND = "mount /dev/sr1 /mnt; python /mnt/gate.py --preflight 
 
 
 def _arch_live_root_prompt_line(ocr: str) -> str | None:
-    """Return only a final-line root@archiso shell prompt, not boot/login banner text."""
+    """Return a standalone Arch root shell prompt, never a boot/login banner."""
     import re
 
-    lines = [" ".join(line.casefold().split()) for line in ocr.splitlines()]
-    last_line = next((line for line in reversed(lines) if line), "")
-    if re.search(r"\broot\s*@?\s*archiso\b.*#\s*$", last_line):
-        return last_line
+    # Do not flatten OCR whitespace before parsing lines: doing so can turn an
+    # Archiso login banner containing "root@archiso" into a false shell prompt.
+    # Accept only a whole OCR line consisting of the expected prompt.
+    pattern = re.compile(r"root\s*@?\s*archiso(?:\s+~)?\s*#")
+    for raw_line in reversed(ocr.splitlines()):
+        line = " ".join(raw_line.casefold().split())
+        if line and pattern.fullmatch(line):
+            return line
     return None
 
 
@@ -518,7 +522,7 @@ def launch(
                                 suffix = f": {detail}" if detail else f" ({type(exc).__name__})"
                                 raise LabError("Live-environment screenshot OCR failed" + suffix + "; boot remains unverified") from exc
                             normalized_ocr = " ".join(ocr.casefold().split())
-                            if _has_arch_live_root_prompt(normalized_ocr):
+                            if _has_arch_live_root_prompt(ocr):
                                 live_detected = True
                                 break
                             if vm_proc.poll() is not None:
@@ -558,7 +562,7 @@ def launch(
                             last_prompt_ocr = "".join(
                                 char for char in normalized_ocr if char.isalnum() or char in " .:/_=@#-"
                             )[:320]
-                            prompt_line = _arch_live_root_prompt_line(normalized_ocr)
+                            prompt_line = _arch_live_root_prompt_line(ocr)
                             if prompt_line is not None:
                                 prompt_detected = True
                                 matched_prompt_ocr = prompt_line[:320]
