@@ -288,6 +288,13 @@ def query_qmp(path: Path, screenshot_path: Path | None = None) -> dict[str, obje
 GUEST_PREFLIGHT_COMMAND = "mount /dev/sr1 /mnt; python /mnt/gate.py --preflight --marker"
 
 
+def _has_arch_live_root_prompt(ocr: str) -> bool:
+    """Require the actual root@archiso shell prompt, not boot-log words like root=."""
+    normalized = " ".join(ocr.casefold().split())
+    compact = "".join(char for char in normalized if char.isalnum() or char == "@")
+    return "root@archiso" in compact
+
+
 def type_qmp_command(path: Path, command: str) -> None:
     """Type only the fixed guest preflight command through QMP; no host shell is invoked."""
     if command != GUEST_PREFLIGHT_COMMAND:
@@ -466,7 +473,7 @@ def launch(
                                 suffix = f": {detail}" if detail else f" ({type(exc).__name__})"
                                 raise LabError("Live-environment screenshot OCR failed" + suffix + "; boot remains unverified") from exc
                             normalized_ocr = " ".join(ocr.casefold().split())
-                            if "archiso" in normalized_ocr and "root" in normalized_ocr:
+                            if _has_arch_live_root_prompt(normalized_ocr):
                                 live_detected = True
                                 break
                             if vm_proc.poll() is not None:
@@ -501,7 +508,7 @@ def launch(
                                     raise LabError("QEMU exited while waiting for guest preflight prompt")
                                 continue
                             normalized_ocr = " ".join(ocr.casefold().split())
-                            if "archiso" in normalized_ocr and "root" in normalized_ocr:
+                            if _has_arch_live_root_prompt(normalized_ocr):
                                 prompt_detected = True
                                 break
                             if vm_proc.poll() is not None:
