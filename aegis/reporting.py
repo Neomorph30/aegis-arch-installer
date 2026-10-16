@@ -21,9 +21,12 @@ PROPOSAL_TEST_STATUSES = frozenset({
 })
 
 SECRET_ASSIGNMENT = re.compile(
-    r"(?i)\b(password|passphrase|secret|credential|keyfile|token|"
-    r"recovery[_-]?key|tpm[_-]?pin|private[_-]?key|api[_-]?key)"
-    r"\s*([=:])\s*([^\s,;]+)"
+    # Allow compound names such as luks_recovery_key, while avoiding matches
+    # inside ordinary words. Underscores intentionally count as separators here.
+    r"(?i)(?<![a-z0-9])(luks[_-]?recovery[_-]?key|password|passphrase|"
+    r"secret|credential|keyfile|token|recovery[_-]?key|tpm[_-]?pin|"
+    r"private[_-]?key|api[_-]?key)(?![a-z0-9])"
+    r"\\s*([=:])\\s*([^\\s,;]+)"
 )
 
 
