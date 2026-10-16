@@ -327,14 +327,14 @@ def press_qmp_enter(path: Path) -> None:
                 raise LabError("QMP returned too many unexpected terminal input messages")
             if "QMP" not in receive():
                 raise LabError("QMP greeting missing while nudging the live terminal")
-            stream.write(json.dumps({"execute": "qmp_capabilities"}).encode() + b"\\n")
+            stream.write(json.dumps({"execute": "qmp_capabilities"}).encode() + b"\n")
             stream.flush()
             if "return" not in receive():
                 raise LabError("QMP capabilities failed while nudging the live terminal")
             stream.write(json.dumps({
                 "execute": "send-key",
                 "arguments": {"keys": [{"type": "qcode", "data": "ret"}], "hold-time": 80},
-            }).encode() + b"\\n")
+            }).encode() + b"\n")
             stream.flush()
             if "return" not in receive():
                 raise LabError("QMP Enter key failed")
