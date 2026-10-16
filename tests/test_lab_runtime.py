@@ -191,6 +191,11 @@ class GuestScreenOCRFallbackTests(unittest.TestCase):
         self.assertEqual(run.call_args_list[0].args[0][-1], "6")
         self.assertEqual(run.call_args_list[1].args[0][-1], "3")
 
+    def test_live_prompt_detector_allows_a_visible_terminal_cursor(self):
+        from lab.runtime import _has_arch_live_root_prompt
+
+        self.assertTrue(_has_arch_live_root_prompt("root@archiso ~ # _"))
+
     @patch("lab.runtime.subprocess.run")
     def test_prompt_ocr_avoids_second_pass_when_first_layout_matches(self, run):
         from lab.runtime import _guest_screen_ocr
