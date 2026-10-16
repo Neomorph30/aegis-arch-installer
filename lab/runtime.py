@@ -290,16 +290,14 @@ GUEST_PREFLIGHT_COMMAND = "mount /dev/sr1 /mnt; python /mnt/gate.py --preflight 
 
 
 def _has_arch_live_root_prompt(ocr: str) -> bool:
-    """Require a shell-prompt-shaped root/archiso line, not boot-log words like root=."""
+    """Require a root@archiso prompt ending in '#', not a boot-log line mentioning it."""
+    import re
+
     for line in ocr.casefold().splitlines():
-        compact = "".join(char for char in line if char.isalnum() or char in "@#")
-        # Require the shell's '#' prompt marker as well as the root/archiso
-        # identity; boot logs may mention root= and archiso before the shell exists.
-        if "root@archiso" in compact and "#" in compact:
-            return True
-        # OCR can misread @, but a root + archiso + shell prompt marker on one
-        # line is still strong evidence; boot logs containing root= do not qualify.
-        if "root" in compact and "archiso" in compact and "#" in compact:
+        normalized = " ".join(line.split())
+        # A prompt ends with '#'. Requiring it at end-of-line avoids boot-log
+        # false positives such as a hook's '#2' followed by more log text.
+        if re.search(r"\\broot\\s*@?\\s*archiso\\b.*#\\s*$", normalized):
             return True
     return False
 
