@@ -10,6 +10,16 @@ from lab.runtime import LabError, main, type_qmp_command
 
 
 class GuestPreflightLauncherTests(unittest.TestCase):
+    def test_live_prompt_detection_rejects_boot_log_false_positives(self):
+        from lab.runtime import _has_arch_live_root_prompt
+
+        self.assertTrue(_has_arch_live_root_prompt("root@archiso ~ #"))
+        self.assertTrue(_has_arch_live_root_prompt("root @ archiso ~ #"))
+        self.assertFalse(_has_arch_live_root_prompt(
+            "running hook archiso_loop_mnt root=/dev/ram0 early hook udev"
+        ))
+        self.assertFalse(_has_arch_live_root_prompt("Arch Linux install medium"))
+
     def test_qmp_typing_refuses_uppercase_and_unapproved_characters_before_connecting(self):
         for command in ("echo OK", "python /tmp/a.py", "echo $HOME", ""):
             with self.subTest(command=command), self.assertRaises(LabError):
