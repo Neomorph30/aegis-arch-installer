@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
+from unittest.mock import patch
 
 from lab.guest_storage_gate import (
     GuestStorageGateError,
@@ -107,6 +110,31 @@ class GuestStorageGateTests(unittest.TestCase):
             sample["devices"][0][field] = value
             with self.subTest(field=field), self.assertRaises(GuestStorageGateError):
                 validate_lab_primary(sample)
+
+    @patch("lab.guest_storage_gate.observe_guest_storage", return_value=fixture())
+    def test_preflight_cli_reports_eligibility_without_authorizing_writes(self, probe):
+        from lab.guest_storage_gate import main
+        output = StringIO()
+        with redirect_stdout(output):
+            status = main(["--preflight"])
+        self.assertEqual(status, 0)
+        result = __import__("json").loads(output.getvalue())
+        self.assertFalse(result["write_authorized"])
+        self.assertFalse(result["writes_performed"])
+        probe.assert_called_once_with()
+
+    @patch("lab.guest_storage_gate.observe_guest_storage",
+           side_effect=GuestStorageGateError("synthetic unsafe topology"))
+    def test_preflight_cli_fails_closed_and_reports_blocked(self, probe):
+        from lab.guest_storage_gate import main
+        output = StringIO()
+        with redirect_stdout(output):
+            status = main(["--preflight"])
+        self.assertEqual(status, 2)
+        result = __import__("json").loads(output.getvalue())
+        self.assertEqual(result["status"], "BLOCKED")
+        self.assertFalse(result["write_authorized"])
+        self.assertFalse(result["writes_performed"])
 
     def test_duplicate_paths_and_incomplete_topology_block(self):
         sample = fixture()
