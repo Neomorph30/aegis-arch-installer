@@ -53,27 +53,29 @@ def public_view(value: Any, *, shareable: bool = False) -> Any:
     return value
 
 
-def html_report(plan: dict[str, Any], *, shareable: bool = True) -> str:
+def validate_proposal_evidence(plan: Any) -> None:
+    """Fail closed on missing/malformed evidence or statuses implying execution."""
     if not isinstance(plan, dict) or plan.get("status") != "PROPOSAL_ONLY" or plan.get("execution_enabled") is not False:
-        raise ValueError("Refusing report: input is not a non-executable AEGIS proposal")
-    clean = public_view(plan, shareable=shareable)
-    # This renderer is for a proposal-only plan, never a record of executed
-    # controls. Fail closed on PASSED or unknown statuses rather than trusting
-    # caller-supplied JSON to assert that a security check ran successfully.
-    if "tests" not in clean:
-        raise ValueError("Refusing report: verification test evidence is missing")
-    tests = clean["tests"]
+        raise ValueError("Refusing proposal output: input is not a non-executable AEGIS proposal")
+    if "tests" not in plan:
+        raise ValueError("Refusing proposal output: verification test evidence is missing")
+    tests = plan["tests"]
     if not isinstance(tests, list):
-        raise ValueError("Refusing report: verification tests must be a list")
+        raise ValueError("Refusing proposal output: verification tests must be a list")
     for item in tests:
         if not isinstance(item, dict):
-            raise ValueError("Refusing report: malformed verification test entry")
+            raise ValueError("Refusing proposal output: malformed verification test entry")
         name = item.get("name")
         result = item.get("result")
         if not isinstance(name, str) or not name.strip():
-            raise ValueError("Refusing report: verification test is missing a name")
+            raise ValueError("Refusing proposal output: verification test is missing a name")
         if not isinstance(result, str) or result not in PROPOSAL_TEST_STATUSES:
-            raise ValueError("Refusing report: proposal-only verification status is invalid or claims execution")
+            raise ValueError("Refusing proposal output: proposal-only verification status is invalid or claims execution")
+
+
+def html_report(plan: dict[str, Any], *, shareable: bool = True) -> str:
+    validate_proposal_evidence(plan)
+    clean = public_view(plan, shareable=shareable)
     actions = "\n".join(
         "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>".format(
             escape(str(x.get("target", ""))),
