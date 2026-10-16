@@ -7,11 +7,14 @@ from typing import Any
 import json
 import re
 
-REDACT_TERMS = (
+# Compare normalized names so common separator variants (tpm-pin, tpm pin,
+# private-key, etc.) receive the same treatment.
+REDACT_TERMS = {
     "password", "passphrase", "secret", "credential", "keyfile",
-    "recovery_key", "tpm_pin", "token", "private_key", "api_key",
-)
-IDENTIFIER_TERMS = {"serial", "wwn", "partuuid", "uuid", "mac_address"}
+    "recoverykey", "luksrecoverykey", "tpmpin", "token", "privatekey",
+    "apikey",
+}
+IDENTIFIER_TERMS = {"serial", "wwn", "partuuid", "uuid", "macaddress"}
 SECRET_ASSIGNMENT = re.compile(
     r"(?i)\b(password|passphrase|secret|credential|keyfile|token|"
     r"recovery[_-]?key|tpm[_-]?pin|private[_-]?key|api[_-]?key)"
@@ -29,7 +32,7 @@ def public_view(value: Any, *, shareable: bool = False) -> Any:
     if isinstance(value, dict):
         result = {}
         for key, item in value.items():
-            lower = str(key).lower()
+            lower = re.sub(r"[^a-z0-9]", "", str(key).lower())
             if any(term in lower for term in REDACT_TERMS) or (shareable and lower in IDENTIFIER_TERMS):
                 result[str(key)] = "[REDACTED]"
             else:
