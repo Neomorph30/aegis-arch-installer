@@ -280,9 +280,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.marker:
         if result.get("write_authorized") is not False or result.get("writes_performed") is not False:
-            print("AEGIS_PREFLIGHT_BLOCKED_UNSAFE_RESULT")
+            print("AEGIS PREFLIGHT BLOCKED UNSAFE RESULT")
             return 2
-        print("AEGIS_PREFLIGHT_PASS_WRITE_AUTHORIZED_FALSE_WRITES_PERFORMED_FALSE")
+        print("AEGIS PREFLIGHT PASS WRITE AUTHORIZED FALSE WRITES PERFORMED FALSE")
     else:
         print(json.dumps(result, sort_keys=True))
     return 0
