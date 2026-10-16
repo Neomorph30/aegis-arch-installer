@@ -151,10 +151,15 @@ class ReportSafetyTests(unittest.TestCase):
 
     def test_escapes_html_and_credentials(self):
         p = plan()
-        p["warnings"].append("<script>alert('no')</script> password=hunter2")
+        p["warnings"].append(
+            "<script>alert('no')</script> password=hunter2 "
+            "private_key=PRIVATE-MATERIAL api_key=API-MATERIAL credential=LOGIN-MATERIAL"
+        )
         rendered = html_report(p)
         self.assertNotIn("<script>", rendered)
-        self.assertNotIn("hunter2", rendered)
+        for secret in ("hunter2", "PRIVATE-MATERIAL", "API-MATERIAL", "LOGIN-MATERIAL"):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, rendered)
         self.assertIn("&lt;script&gt;", rendered)
 
     def test_sensitive_keys_redacted(self):
