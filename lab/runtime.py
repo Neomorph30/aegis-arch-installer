@@ -323,7 +323,7 @@ def type_qmp_command(path: Path, command: str) -> None:
                 key = qcodes.get(char, char)
                 cmd("send-key", {"keys": [{"type": "qcode", "data": key}], "hold-time": 80})
                 time.sleep(0.025)
-            cmd("send-key", {"keys": [{"type": "qcode", "data": "ret"}], "hold-time": 80)
+            cmd("send-key", {"keys": [{"type": "qcode", "data": "ret"}], "hold-time": 80})
 
 
 def _finish(proc: subprocess.Popen | None) -> None:
