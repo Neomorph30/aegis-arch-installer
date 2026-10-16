@@ -16,6 +16,7 @@ class GuestPreflightLauncherTests(unittest.TestCase):
         self.assertTrue(_has_arch_live_root_prompt("root@archiso ~ #"))
         self.assertTrue(_has_arch_live_root_prompt("root @ archiso ~ #"))
         self.assertTrue(_has_arch_live_root_prompt("root archiso ~ #"))
+        self.assertFalse(_has_arch_live_root_prompt("root@archiso appears in boot log"))
         self.assertFalse(_has_arch_live_root_prompt(
             "running hook archiso_loop_mnt root=/dev/ram0 early hook udev"
         ))
