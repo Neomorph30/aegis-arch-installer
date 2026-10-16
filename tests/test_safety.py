@@ -185,6 +185,26 @@ class ReportSafetyTests(unittest.TestCase):
                 self.assertEqual(redacted[key], "[REDACTED]")
 
 
+    def test_html_rejects_forged_passed_or_unknown_verification_status(self):
+        for result in ("PASSED", "PASS", "SUCCESS", "verified"):
+            with self.subTest(result=result):
+                p = plan()
+                p["tests"][0]["result"] = result
+                with self.assertRaisesRegex(ValueError, "verification status"):
+                    html_report(p)
+
+    def test_html_accepts_explicit_non_pass_proposal_statuses(self):
+        p = plan()
+        p["tests"] = [
+            {"name": "future control", "result": "SKIPPED"},
+            {"name": "unrun control", "result": "UNVERIFIED"},
+            {"name": "blocked control", "result": "BLOCKED"},
+            {"name": "failed preflight", "result": "FAILED"},
+        ]
+        rendered = html_report(p)
+        for status in ("SKIPPED", "UNVERIFIED", "BLOCKED", "FAILED"):
+            self.assertIn(status, rendered)
+
     def test_seeded_secret_variants_never_appear_in_shareable_html_or_json_view(self):
         p = plan()
         p["diagnostic_metadata"] = {
