@@ -29,6 +29,21 @@ python -m lab --run --iso /path/to/verified-arch.iso
 - The smoke test waits for `swtpm`, queries QEMU's status and registered TPM via local QMP, then keeps it alive for a bounded interval, and terminates both processes. A passing smoke test proves **emulation startup and TPM registration only**. It does not prove UEFI firmware finished booting, that the ISO booted, or that host isolation is formally guaranteed.
 - If QEMU is compromised via a hypervisor escape, it still runs with its host user's file permissions. AEGIS does **not** claim a hardened host sandbox: run only trusted ISOs; further confinement must be reviewed before executing adversarial guest code.
 
+## Guest storage preflight (read-only)
+
+The new `lab.guest_storage_gate` entry point is a **read-only probe**, not an
+installer. Run it from the source checkout inside the disposable guest only:
+
+```bash
+python -m lab.guest_storage_gate --preflight
+```
+
+It collects live `lsblk`, sysfs holder and `/proc/swaps` observations, then
+requires the exact blank 24 GiB `AEGIS-LAB-PRIMARY` disk and 8 GiB read-only
+`AEGIS-LAB-SECONDARY` disk. It returns a blocked status if device identity or
+safety state is incomplete. It never authorizes writes. Do not interpret a
+successful preflight as permission to run partitioning or formatting commands.
+
 ## Safety and recovery checks
 
 Run the no-write tests:
