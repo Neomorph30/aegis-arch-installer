@@ -52,6 +52,13 @@ def validate_lab_primary(observation: dict[str, Any]) -> dict[str, Any]:
             raise GuestStorageGateError("Missing, invalid or duplicate device path")
         if not isinstance(kind, str) or not kind:
             raise GuestStorageGateError("Missing block-device type")
+        size = node.get("size")
+        if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+            raise GuestStorageGateError(f"Invalid block-device capacity on {path}")
+        for flag in ("ro", "rm"):
+            flag_value = node.get(flag)
+            if type(flag_value) not in (bool, int) or flag_value not in (0, 1):
+                raise GuestStorageGateError(f"Unverified {flag} flag on {path}")
         paths.add(path)
         all_nodes.append(node)
         if kind == "disk" and node.get("serial") == PRIMARY_SERIAL:
