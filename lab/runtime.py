@@ -393,6 +393,42 @@ def add_guest_payload_device(path: Path) -> None:
             })
 
 
+
+def _preserve_failure_screenshot(screenshot: Path | None) -> str | None:
+    """Optionally preserve one final guest screen in a caller-created private diagnostics directory.
+
+    Disabled by default. The destination must already be a private directory owned
+    by this unprivileged process; output creation is exclusive and refuses symlinks.
+    """
+    destination = os.environ.get("AEGIS_LAB_DIAGNOSTICS_DIR")
+    if not destination or screenshot is None:
+        return None
+    try:
+        if not _regular_nonlink(screenshot):
+            return None
+        directory = Path(destination)
+        if directory.is_symlink():
+            return None
+        directory_stat = directory.stat()
+        if (not stat.S_ISDIR(directory_stat.st_mode)
+                or directory_stat.st_uid != os.geteuid()
+                or directory_stat.st_mode & 0o077):
+            return None
+        target = directory / "guest-screen.png"
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(target, flags, 0o600)
+        with os.fdopen(fd, "wb") as output, screenshot.open("rb") as source:
+            shutil.copyfileobj(source, output, length=1024 * 1024)
+            output.flush()
+            os.fsync(output.fileno())
+        return "final guest screen preserved as guest-screen.png"
+    except OSError:
+        # Diagnostics must never mask the original boot failure.
+        return None
+
+
 def _finish(proc: subprocess.Popen | None) -> None:
     if proc is None:
         return
@@ -658,9 +694,15 @@ def launch(
                         "guest_network_enabled": network_mode == "user-nat-explicit",
                         "inbound_port_forwarding_enabled": False}
         except (LabError, OSError) as exc:
-            # Preserve bounded emulator diagnostics before TemporaryDirectory cleanup.
-            # These logs contain emulator errors, not credentials or user secrets.
+            # Preserve an optional final screen before TemporaryDirectory cleanup.
+            # CI may upload this isolated live-console image to diagnose boot failures.
+            screenshot_path = locals().get("screenshot")
+            screenshot_note = _preserve_failure_screenshot(
+                screenshot_path if isinstance(screenshot_path, Path) else None
+            )
             details = []
+            if screenshot_note:
+                details.append(screenshot_note)
             for name in ("qemu.stderr", "tpm.stderr"):
                 try:
                     detail = (folder / name).read_text(encoding="utf-8", errors="replace").strip()
