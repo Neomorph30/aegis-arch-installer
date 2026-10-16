@@ -1,0 +1,62 @@
+name: Disposable Arch Live Boot Verification
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "lab/**"
+      - ".github/workflows/arch-live-boot.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arch-live-boot-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  arch-live-boot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout reviewed source
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install unprivileged emulation and OCR dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            qemu-system-x86 ovmf swtpm tesseract-ocr
+      - name: Download ISO and official Arch checksum manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -m 700 "$RUNNER_TEMP/archiso"
+          cd "$RUNNER_TEMP/archiso"
+          curl --fail --silent --show-error --location \
+            --output archlinux-x86_64.iso \
+            https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso
+          curl --fail --silent --show-error --location \
+            --output sha256sums.txt \
+            https://archlinux.org/iso/latest/sha256sums.txt
+          line="$(grep -E '^[[:xdigit:]]{64}  archlinux-x86_64\.iso$' sha256sums.txt)"
+          test -n "$line"
+          printf '%s\n' "$line" | sha256sum --check --strict
+          digest="${line%% *}"
+          echo "ARCH_ISO_SHA256=$digest" >> "$GITHUB_ENV"
+      - name: Boot the verified Arch live environment in an isolated disposable VM
+        env:
+          ISO_PATH: ${{ runner.temp }}/archiso/archlinux-x86_64.iso
+        run: |
+          set -euo pipefail
+          python -m lab --check
+          python -m lab --smoke \
+            --observe-live \
+            --live-timeout-seconds 240 \
+            --seconds 3 \
+            --network-mode disabled \
+            --iso "$ISO_PATH" \
+            --iso-sha256 "$ARCH_ISO_SHA256"
