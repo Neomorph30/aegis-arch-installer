@@ -54,8 +54,10 @@ jobs:
       - name: Boot the verified Arch live environment in an isolated disposable VM
         env:
           ISO_PATH: ${{ runner.temp }}/archiso/archlinux-x86_64.iso
+          AEGIS_LAB_DIAGNOSTICS_DIR: ${{ runner.temp }}/aegis-boot-diagnostics
         run: |
           set -euo pipefail
+          mkdir -m 700 "$AEGIS_LAB_DIAGNOSTICS_DIR"
           python -m lab --check
           mkdir -m 700 "$RUNNER_TEMP/guest-payload"
           cp lab/guest_storage_gate.py "$RUNNER_TEMP/guest-payload/gate.py"
@@ -68,3 +70,11 @@ jobs:
             --network-mode disabled \
             --iso "$ISO_PATH" \
             --iso-sha256 "$ARCH_ISO_SHA256"
+      - name: Upload final guest screen when boot verification fails
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: aegis-arch-boot-diagnostics
+          path: ${{ runner.temp }}/aegis-boot-diagnostics/guest-screen.png
+          if-no-files-found: ignore
+          retention-days: 3
