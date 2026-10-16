@@ -615,6 +615,7 @@ def launch(
                         consecutive_prompt_observations = 0
                         last_prompt_ocr = ""
                         matched_prompt_ocr = ""
+                        login_banner_nudged = False
                         while time.monotonic() < deadline:
                             attempts += 1
                             query_qmp(paths["qmp_sock"], screenshot)
@@ -643,6 +644,17 @@ def launch(
                                     break
                             else:
                                 consecutive_prompt_observations = 0
+                                # Some Arch ISO boots stop at the tty login banner until
+                                # Enter is pressed. A single Enter contains no command and
+                                # is allowed only for that observed banner; all command text
+                                # remains gated behind two verified standalone root prompts.
+                                if (not login_banner_nudged
+                                        and ("archiso login:" in normalized_ocr
+                                             or "automatic login" in normalized_ocr)):
+                                    press_qmp_enter(paths["qmp_sock"])
+                                    login_banner_nudged = True
+                                    time.sleep(2.0)
+                                    continue
                             if vm_proc.poll() is not None:
                                 raise LabError("QEMU exited before guest preflight prompt appeared")
                             time.sleep(2.0)
