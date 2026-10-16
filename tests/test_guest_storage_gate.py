@@ -77,6 +77,12 @@ class GuestStorageGateTests(unittest.TestCase):
         with self.assertRaisesRegex(GuestStorageGateError, "must be blank whole disks"):
             validate_lab_primary(sample)
 
+    def test_removable_secondary_is_rejected(self):
+        sample = fixture()
+        sample["devices"][1]["rm"] = True
+        with self.assertRaisesRegex(GuestStorageGateError, "Removable secondary"):
+            validate_lab_primary(sample)
+
     def test_primary_identity_and_capacity_are_exact(self):
         for key, value in (("serial", "OTHER"), ("size", PRIMARY_BYTES - 1)):
             sample = fixture()
