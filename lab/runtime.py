@@ -289,17 +289,19 @@ def query_qmp(path: Path, screenshot_path: Path | None = None) -> dict[str, obje
 GUEST_PREFLIGHT_COMMAND = "mount /dev/sr1 /mnt; python /mnt/gate.py --preflight --marker"
 
 
-def _has_arch_live_root_prompt(ocr: str) -> bool:
-    """Require a root@archiso prompt ending in '#', not a boot-log line mentioning it."""
+def _arch_live_root_prompt_line(ocr: str) -> str | None:
+    """Return only a final-line root@archiso shell prompt, not boot/login banner text."""
     import re
 
-    for line in ocr.casefold().splitlines():
-        normalized = " ".join(line.split())
-        # A prompt ends with '#'. Requiring it at end-of-line avoids boot-log
-        # false positives such as a hook's '#2' followed by more log text.
-        if re.search(r"\broot\s*@?\s*archiso\b.*#\s*$", normalized):
-            return True
-    return False
+    lines = [" ".join(line.casefold().split()) for line in ocr.splitlines()]
+    last_line = next((line for line in reversed(lines) if line), "")
+    if re.search(r"\broot\s*@?\s*archiso\b.*#\s*$", last_line):
+        return last_line
+    return None
+
+
+def _has_arch_live_root_prompt(ocr: str) -> bool:
+    return _arch_live_root_prompt_line(ocr) is not None
 
 
 def type_qmp_command(path: Path, command: str) -> None:
@@ -556,9 +558,10 @@ def launch(
                             last_prompt_ocr = "".join(
                                 char for char in normalized_ocr if char.isalnum() or char in " .:/_=@#-"
                             )[:320]
-                            if _has_arch_live_root_prompt(normalized_ocr):
+                            prompt_line = _arch_live_root_prompt_line(normalized_ocr)
+                            if prompt_line is not None:
                                 prompt_detected = True
-                                matched_prompt_ocr = last_prompt_ocr
+                                matched_prompt_ocr = prompt_line[:320]
                                 break
                             if vm_proc.poll() is not None:
                                 raise LabError("QEMU exited before guest preflight prompt appeared")
