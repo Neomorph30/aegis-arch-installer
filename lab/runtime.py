@@ -296,7 +296,7 @@ def _arch_live_root_prompt_line(ocr: str) -> str | None:
     # Do not flatten OCR whitespace before parsing lines: doing so can turn an
     # Archiso login banner containing "root@archiso" into a false shell prompt.
     # Accept only a whole OCR line consisting of the expected prompt.
-    pattern = re.compile(r"root\s*@?\s*archiso(?:\s+~)?\s*#")
+    pattern = re.compile(r"root\s*@?\s*archiso(?:\s+~)?\s*#(?:\s*[_|]?)")
     for raw_line in reversed(ocr.splitlines()):
         line = " ".join(raw_line.casefold().split())
         if line and pattern.fullmatch(line):
