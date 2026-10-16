@@ -495,6 +495,7 @@ def launch(
                         deadline = time.monotonic() + live_timeout_seconds
                         attempts = 0
                         prompt_detected = False
+                        last_prompt_ocr = ""
                         while time.monotonic() < deadline:
                             attempts += 1
                             query_qmp(paths["qmp_sock"], screenshot)
@@ -508,6 +509,9 @@ def launch(
                                     raise LabError("QEMU exited while waiting for guest preflight prompt")
                                 continue
                             normalized_ocr = " ".join(ocr.casefold().split())
+                            last_prompt_ocr = "".join(
+                                char for char in normalized_ocr if char.isalnum() or char in " .:/_=@#-"
+                            )[:320]
                             if _has_arch_live_root_prompt(normalized_ocr):
                                 prompt_detected = True
                                 break
@@ -515,7 +519,10 @@ def launch(
                                 raise LabError("QEMU exited before guest preflight prompt appeared")
                             time.sleep(2.0)
                         if not prompt_detected:
-                            raise LabError("Arch live prompt not detected; guest preflight was not run")
+                            detail = f"; last guest screen OCR: {last_prompt_ocr}" if last_prompt_ocr else ""
+                            raise LabError(
+                                "Arch live prompt not detected; guest preflight was not run" + detail
+                            )
                         # This is a fixed, lowercase command. The guest script is mounted from a
                         # separate read-only ISO; no command or path is supplied by the caller.
                         type_qmp_command(
