@@ -308,6 +308,40 @@ def _has_arch_live_root_prompt(ocr: str) -> bool:
     return _arch_live_root_prompt_line(ocr) is not None
 
 
+def _guest_screen_ocr(screenshot: Path, *, timeout: int = 20, preflight_result: bool = False) -> str:
+    """Use a second OCR layout when the compact terminal layout misses shell text.
+
+    QEMU screenshots can contain both the Archiso login banner and a real shell
+    prompt. Tesseract's single-block mode sometimes omits the prompt line, so
+    retry the same immutable screenshot with automatic page segmentation before
+    concluding that the guest has not reached a shell or emitted its marker.
+    """
+    first = subprocess.run(
+        ["tesseract", str(screenshot), "stdout", "--psm", "6"],
+        check=True, capture_output=True, text=True, timeout=timeout,
+    ).stdout
+    normalized_first = " ".join(first.casefold().split())
+    if preflight_result:
+        if ("aegis preflight pass" in normalized_first
+                or "aegis preflight blocked" in normalized_first):
+            return first
+    elif _has_arch_live_root_prompt(first):
+        return first
+
+    second = subprocess.run(
+        ["tesseract", str(screenshot), "stdout", "--psm", "3"],
+        check=True, capture_output=True, text=True, timeout=timeout,
+    ).stdout
+    normalized_second = " ".join(second.casefold().split())
+    if preflight_result:
+        if ("aegis preflight pass" in normalized_second
+                or "aegis preflight blocked" in normalized_second):
+            return second
+    elif _has_arch_live_root_prompt(second):
+        return second
+    return second if len(second) > len(first) else first
+
+
 def press_qmp_enter(path: Path) -> None:
     """Send one Enter key only to dismiss a login/terminal banner; never type text."""
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
@@ -620,10 +654,7 @@ def launch(
                             attempts += 1
                             query_qmp(paths["qmp_sock"], screenshot)
                             try:
-                                ocr = subprocess.run(
-                                    ["tesseract", str(screenshot), "stdout", "--psm", "6"],
-                                    check=True, capture_output=True, text=True, timeout=20,
-                                ).stdout
+                                ocr = _guest_screen_ocr(screenshot, timeout=20)
                             except subprocess.TimeoutExpired:
                                 if vm_proc.poll() is not None:
                                     raise LabError("QEMU exited while waiting for guest preflight prompt")
@@ -681,10 +712,7 @@ def launch(
                             preflight_attempts += 1
                             query_qmp(paths["qmp_sock"], screenshot)
                             try:
-                                ocr = subprocess.run(
-                                    ["tesseract", str(screenshot), "stdout", "--psm", "6"],
-                                    check=True, capture_output=True, text=True, timeout=20,
-                                ).stdout
+                                ocr = _guest_screen_ocr(screenshot, timeout=20, preflight_result=True)
                             except subprocess.TimeoutExpired:
                                 if vm_proc.poll() is not None:
                                     raise LabError("QEMU exited while guest preflight result was pending")
