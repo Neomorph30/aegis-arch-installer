@@ -41,6 +41,7 @@ def _write_new(path: str, content: str) -> None:
 
 
 def _write_json(path: str, data: dict[str, Any]) -> None:
+    validate_proposal_evidence(data)
     _write_new(path, json.dumps(public_view(data), indent=2, ensure_ascii=False) + "\n")
 
 
