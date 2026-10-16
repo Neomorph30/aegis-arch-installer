@@ -2,9 +2,11 @@
 
 ## Current state
 
-**No installer disk writer is enabled.** `lab/guest_storage_gate.py` is a pure
-validation contract. It never opens a device, invokes a command, partitions,
-formats or encrypts anything. Its success result means only
+**No installer disk writer is enabled.** `lab/guest_storage_gate.py` now has a
+read-only `--preflight` entry point that gathers a fresh `lsblk`, sysfs-holder,
+and `/proc/swaps` snapshot and applies the pure validation contract. It never
+opens a device for writing, invokes partitioning/formatting/encryption tools, or
+authorizes writes. Its success result means only
 `ELIGIBLE_FOR_SEPARATE_EXPLICIT_LAB_CONSENT`; `write_authorized` remains
 `false`.
 
@@ -54,6 +56,9 @@ in `RELEASE_GATES.md` are independently reviewed and satisfied.
 ## Current evidence and limits
 
 Unit tests for the pure gate use synthetic JSON only and never open block devices.
-The existing QEMU smoke test proves launch and virtual TPM registration, not guest
-boot, Arch installation, encryption, or recovery. A successful preflight result
-must never be described as an installation or write authorization.
+The live preflight command is new and still needs CI verification on its latest
+commit; it must first be exercised inside the disposable guest before any writer
+is considered. The existing QEMU smoke test proves launch and virtual TPM
+registration, not guest boot, Arch installation, encryption, or recovery. A
+successful preflight result must never be described as an installation or write
+authorization.
