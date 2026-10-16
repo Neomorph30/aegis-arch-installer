@@ -281,8 +281,13 @@ def query_qmp(path: Path, screenshot_path: Path | None = None) -> dict[str, obje
             return result
 
 
+GUEST_PREFLIGHT_COMMAND = "mount /dev/sr1 /mnt; python /mnt/gate.py --preflight --marker"
+
+
 def type_qmp_command(path: Path, command: str) -> None:
-    """Type a constrained lowercase shell command through QMP; no host shell is invoked."""
+    """Type only the fixed guest preflight command through QMP; no host shell is invoked."""
+    if command != GUEST_PREFLIGHT_COMMAND:
+        raise LabError("Only the fixed read-only guest preflight command may be typed")
     qcodes = {
         " ": "spc", "/": "slash", ".": "dot", "-": "minus", ";": "semicolon",
     }
@@ -502,7 +507,7 @@ def launch(
                         # separate read-only ISO; no command or path is supplied by the caller.
                         type_qmp_command(
                             paths["qmp_sock"],
-                            "mount /dev/sr1 /mnt; python /mnt/gate.py --preflight --marker",
+                            GUEST_PREFLIGHT_COMMAND,
                         )
                         preflight_deadline = time.monotonic() + min(90, live_timeout_seconds)
                         preflight_attempts = 0
