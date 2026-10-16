@@ -196,8 +196,14 @@ def observe_guest_storage() -> dict[str, Any]:
         mounts = node.get("mountpoints")
         if mounts is None:
             raise GuestStorageGateError(f"Unable to verify mountpoints for {path}")
-        if not isinstance(mounts, list):
+        if not isinstance(mounts, list) or any(
+            item is not None and (not isinstance(item, str) or not item.strip())
+            for item in mounts
+        ):
             raise GuestStorageGateError(f"Malformed mountpoints for {path}")
+        # lsblk commonly represents an unmounted device as [null]; normalize
+        # that to an empty list so only real mount paths block the target.
+        mounts = [item for item in mounts if isinstance(item, str) and item.strip()]
         serial = node.get("serial")
         serial = serial.strip() if isinstance(serial, str) and serial.strip() else None
         children = node.get("children")
