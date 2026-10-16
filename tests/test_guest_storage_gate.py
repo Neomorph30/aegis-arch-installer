@@ -166,6 +166,10 @@ class GuestStorageGateTests(unittest.TestCase):
         self.assertFalse(observed["devices"][0]["active_swap"])
         self.assertEqual(validate_lab_primary(observed)["target"]["serial"], "AEGIS-LAB-PRIMARY")
         run.assert_called_once()
+        lsblk_command = run.call_args.args[0]
+        self.assertIn("--tree", lsblk_command)
+        self.assertIn("MAJ:MIN", lsblk_command[lsblk_command.index("--output") + 1])
+        self.assertNotIn("CHILDREN", lsblk_command[lsblk_command.index("--output") + 1])
         iterdir.assert_called()
 
     @patch("lab.guest_storage_gate.observe_guest_storage", return_value=fixture())
