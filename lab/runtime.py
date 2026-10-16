@@ -308,6 +308,38 @@ def _has_arch_live_root_prompt(ocr: str) -> bool:
     return _arch_live_root_prompt_line(ocr) is not None
 
 
+def press_qmp_enter(path: Path) -> None:
+    """Send one Enter key only to dismiss a login/terminal banner; never type text."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(3.0)
+        client.connect(str(path))
+        with client.makefile("rwb") as stream:
+            def receive() -> dict:
+                for _ in range(16):
+                    line = stream.readline(64 * 1024)
+                    if not line:
+                        raise LabError("QMP disconnected while nudging the live terminal")
+                    msg = json.loads(line)
+                    if "error" in msg:
+                        raise LabError("QMP rejected terminal Enter key")
+                    if "return" in msg or "QMP" in msg:
+                        return msg
+                raise LabError("QMP returned too many unexpected terminal input messages")
+            if "QMP" not in receive():
+                raise LabError("QMP greeting missing while nudging the live terminal")
+            stream.write(json.dumps({"execute": "qmp_capabilities"}).encode() + b"\\n")
+            stream.flush()
+            if "return" not in receive():
+                raise LabError("QMP capabilities failed while nudging the live terminal")
+            stream.write(json.dumps({
+                "execute": "send-key",
+                "arguments": {"keys": [{"type": "qcode", "data": "ret"}], "hold-time": 80},
+            }).encode() + b"\\n")
+            stream.flush()
+            if "return" not in receive():
+                raise LabError("QMP Enter key failed")
+
+
 def type_qmp_command(path: Path, command: str) -> None:
     """Type only the fixed guest preflight command through QMP; no host shell is invoked."""
     if command != GUEST_PREFLIGHT_COMMAND:
