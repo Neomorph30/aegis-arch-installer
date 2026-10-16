@@ -41,9 +41,11 @@ jobs:
           mkdir -m 700 "$RUNNER_TEMP/archiso"
           cd "$RUNNER_TEMP/archiso"
           curl --fail --silent --show-error --location \
+            --connect-timeout 20 --max-time 480 \
             --output archlinux-x86_64.iso \
             https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso
           curl --fail --silent --show-error --location \
+            --connect-timeout 20 --max-time 60 \
             --output sha256sums.txt \
             https://archlinux.org/iso/latest/sha256sums.txt
           line="$(grep -E '^[[:xdigit:]]{64}  archlinux-x86_64\.iso$' sha256sums.txt)"
@@ -67,7 +69,8 @@ jobs:
             --guest-preflight-payload "$RUNNER_TEMP/guest-preflight.iso" \
             --live-timeout-seconds 240 \
             --seconds 3 \
-            --network-mode disabled \
+            # User-mode NAT is explicit and guest-only; never bridge or pass through host devices.
+            --network-mode user-nat-explicit \
             --iso "$ISO_PATH" \
             --iso-sha256 "$ARCH_ISO_SHA256"
       - name: Upload final guest screen when boot verification fails
