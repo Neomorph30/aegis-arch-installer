@@ -5,7 +5,7 @@ import unittest
 
 from aegis.planner import (PlanError, ALIGNMENT, EFI_SIZE_BYTES,
                            GPT_HEADROOM_BYTES, build_storage_plan)
-from aegis.reporting import html_report, public_view
+from aegis.reporting import html_report, public_view, validate_proposal_evidence
 from aegis.profiles import recommend
 
 FIXTURE = json.loads((Path(__file__).resolve().parent.parent / "fixtures" / "desktop-example.json").read_text())
@@ -127,7 +127,31 @@ class StorageSafetyTests(unittest.TestCase):
         self.assertTrue(all(t["result"] != "PASSED" for t in p["tests"]))
 
 
-class ReportSafetyTests(unittest.TestCase):
+class ReportSafetyTests(unittest.TestCase):\n
+    def test_shared_proposal_evidence_validator_rejects_forged_json_status(self):
+        for result in ("PASSED", "PASS", "SUCCESS", "verified", None, ""):
+            with self.subTest(result=result):
+                p = plan()
+                p["tests"][0]["result"] = result
+                with self.assertRaisesRegex(ValueError, "verification status"):
+                    validate_proposal_evidence(p)
+
+    def test_shared_proposal_evidence_validator_rejects_missing_or_malformed_tests(self):
+        cases = []
+        missing = plan()
+        del missing["tests"]
+        cases.append((missing, "evidence is missing"))
+        not_list = plan()
+        not_list["tests"] = {"name": "one", "result": "SKIPPED"}
+        cases.append((not_list, "must be a list"))
+        malformed = plan()
+        malformed["tests"] = [{"name": "", "result": "SKIPPED"}]
+        cases.append((malformed, "missing a name"))
+        for p, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(ValueError, message):
+                    validate_proposal_evidence(p)
+
     def test_html_denies_installed_claim(self):
         p = plan()
         p["status"] = "SUCCESS"
