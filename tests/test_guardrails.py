@@ -53,6 +53,22 @@ class GuardrailTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 _write_json(str(destination), {"x": True})
 
+
+    def test_json_proposal_writer_rejects_forged_verification_status(self):
+        with tempfile.TemporaryDirectory() as d:
+            destination = Path(d) / "forged.json"
+            proposal = {
+                "status": "PROPOSAL_ONLY",
+                "execution_enabled": False,
+                "tests": [{"name": "fake verification", "result": "PASSED"}],
+            }
+            with self.assertRaisesRegex(ValueError, "verification status"):
+                from aegis.reporting import validate_proposal_evidence
+                validate_proposal_evidence(proposal)
+            # The generic writer remains usable for non-report JSON, while
+            # proposal commands validate before calling it.
+            _write_json(str(destination), proposal)
+            self.assertTrue(destination.exists())
     def test_report_output_rejects_existing_symlink(self):
         with tempfile.TemporaryDirectory() as d:
             protected = Path(d) / "protected.txt"
