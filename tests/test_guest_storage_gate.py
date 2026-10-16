@@ -125,6 +125,12 @@ class GuestStorageGateTests(unittest.TestCase):
         import json
         from lab.guest_storage_gate import observe_guest_storage
         payload = {"blockdevices": [
+            {"path": "/dev/sr0", "type": "rom", "serial": "ARCH-ISO",
+             "size": 700 * 1024**2, "ro": True, "rm": True,
+             "mountpoints": [None], "maj:min": "11:0", "children": []},
+            {"path": "/dev/loop0", "type": "loop", "serial": None,
+             "size": 700 * 1024**2, "ro": True, "rm": False,
+             "mountpoints": [None], "maj:min": "7:0", "children": []},
             {"path": "/dev/vda", "type": "disk", "serial": "AEGIS-LAB-PRIMARY",
              "size": PRIMARY_BYTES, "ro": False, "rm": False,
              "mountpoints": [None], "maj:min": "252:0", "children": []},
@@ -134,6 +140,8 @@ class GuestStorageGateTests(unittest.TestCase):
         ]}
         run.return_value = SimpleNamespace(stdout=json.dumps(payload))
         observed = observe_guest_storage()
+        self.assertEqual(len(observed["devices"]), 2)
+        self.assertEqual(observed["devices"][0]["path"], "/dev/vda")
         self.assertEqual(observed["devices"][0]["mountpoints"], [])
         self.assertEqual(observed["devices"][0]["holders"], [])
         self.assertFalse(observed["devices"][0]["active_swap"])
