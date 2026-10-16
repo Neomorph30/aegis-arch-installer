@@ -580,6 +580,7 @@ def launch(
                         deadline = time.monotonic() + live_timeout_seconds
                         attempts = 0
                         prompt_detected = False
+                        consecutive_prompt_observations = 0
                         last_prompt_ocr = ""
                         matched_prompt_ocr = ""
                         while time.monotonic() < deadline:
@@ -600,9 +601,16 @@ def launch(
                             )[:320]
                             prompt_line = _arch_live_root_prompt_line(ocr)
                             if prompt_line is not None:
-                                prompt_detected = True
+                                consecutive_prompt_observations += 1
                                 matched_prompt_ocr = prompt_line[:320]
-                                break
+                                # OCR can mistake boot/login text for a shell prompt.
+                                # Require the same standalone prompt across independent
+                                # screenshots before sending any guest keystrokes.
+                                if consecutive_prompt_observations >= 2:
+                                    prompt_detected = True
+                                    break
+                            else:
+                                consecutive_prompt_observations = 0
                             if vm_proc.poll() is not None:
                                 raise LabError("QEMU exited before guest preflight prompt appeared")
                             time.sleep(2.0)
