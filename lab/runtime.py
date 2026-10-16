@@ -232,9 +232,10 @@ def command_lines(
                  "-device", "virtio-scsi-pci,id=scsi0",
                  "-device", "scsi-cd,bus=scsi0.0,drive=installer"]
     if "payload_iso" in prepared:
-        # The guest test harness is a separate read-only optical medium, never a block target.
-        qemu += ["-drive", f"if=none,id=guestpayload,media=cdrom,format=raw,readonly=on,file={prepared['payload_iso']}",
-                 "-device", "scsi-cd,bus=scsi0.0,scsi-id=1,drive=guestpayload"]
+        # Keep the payload backend unattached during boot so Archiso cannot mistake
+        # the helper ISO for its boot medium. The read-only CD device is hot-plugged
+        # through QMP only after the actual live root prompt has been verified.
+        qemu += ["-drive", f"if=none,id=guestpayload,media=cdrom,format=raw,readonly=on,file={prepared['payload_iso']}"]
     return tpm, qemu
 
 
@@ -348,6 +349,42 @@ def type_qmp_command(path: Path, command: str) -> None:
                 # QMP send-key calls can turn characters into unintended chords.
                 time.sleep(0.08)
             cmd("send-key", {"keys": [{"type": "qcode", "data": "ret"}], "hold-time": 80})
+
+
+def add_guest_payload_device(path: Path) -> None:
+    """Hot-plug the pre-created read-only helper CD only after Arch has booted."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(3.0)
+        client.connect(str(path))
+        with client.makefile("rwb") as stream:
+            def receive() -> dict:
+                for _ in range(16):
+                    line = stream.readline(64 * 1024)
+                    if not line:
+                        raise LabError("QMP disconnected while attaching guest preflight media")
+                    msg = json.loads(line)
+                    if "error" in msg:
+                        raise LabError("QMP rejected guest preflight media attachment")
+                    if "return" in msg or "QMP" in msg:
+                        return msg
+                raise LabError("QMP returned too many unexpected media-attachment messages")
+            if "QMP" not in receive():
+                raise LabError("QMP greeting missing while attaching guest preflight media")
+            def cmd(name: str, arguments: dict[str, object] | None = None) -> object:
+                request: dict[str, object] = {"execute": name}
+                if arguments is not None:
+                    request["arguments"] = arguments
+                stream.write(json.dumps(request).encode() + b"\\n")
+                stream.flush()
+                reply = receive()
+                if "return" not in reply:
+                    raise LabError("QMP media-attachment command did not return successfully")
+                return reply["return"]
+            cmd("qmp_capabilities")
+            cmd("device_add", {
+                "driver": "scsi-cd", "id": "guestpayload-device",
+                "bus": "scsi0.0", "drive": "guestpayload", "scsi-id": 1,
+            })
 
 
 def _finish(proc: subprocess.Popen | None) -> None:
@@ -529,6 +566,10 @@ def launch(
                             raise LabError(
                                 "Arch live prompt not detected; guest preflight was not run" + detail
                             )
+                        # Attach the helper only after the verified Arch live prompt;
+                        # this prevents the second ISO from affecting Archiso boot discovery.
+                        add_guest_payload_device(paths["qmp_sock"])
+                        time.sleep(2.0)  # allow guest udev to create /dev/sr1
                         # This is a fixed, lowercase command. The guest script is mounted from a
                         # separate read-only ISO; no command or path is supplied by the caller.
                         type_qmp_command(
