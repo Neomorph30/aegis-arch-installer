@@ -180,6 +180,19 @@ class GuestStorageGateTests(unittest.TestCase):
         self.assertFalse(result["writes_performed"])
         probe.assert_called_once_with()
 
+    @patch("lab.guest_storage_gate.observe_guest_storage", return_value=fixture())
+    def test_marker_mode_emits_success_only_with_write_guards_false(self, probe):
+        from lab.guest_storage_gate import main
+        output = StringIO()
+        with redirect_stdout(output):
+            status = main(["--preflight", "--marker"])
+        self.assertEqual(status, 0)
+        self.assertEqual(
+            output.getvalue().strip(),
+            "AEGIS PREFLIGHT PASS WRITE AUTHORIZED FALSE WRITES PERFORMED FALSE",
+        )
+        probe.assert_called_once_with()
+
     @patch("lab.guest_storage_gate.observe_guest_storage",
            side_effect=GuestStorageGateError("synthetic unsafe topology"))
     def test_preflight_cli_fails_closed_and_reports_blocked(self, probe):
