@@ -293,7 +293,9 @@ def _has_arch_live_root_prompt(ocr: str) -> bool:
     """Require a shell-prompt-shaped root/archiso line, not boot-log words like root=."""
     for line in ocr.casefold().splitlines():
         compact = "".join(char for char in line if char.isalnum() or char in "@#")
-        if "root@archiso" in compact:
+        # Require the shell's '#' prompt marker as well as the root/archiso
+        # identity; boot logs may mention root= and archiso before the shell exists.
+        if "root@archiso" in compact and "#" in compact:
             return True
         # OCR can misread @, but a root + archiso + shell prompt marker on one
         # line is still strong evidence; boot logs containing root= do not qualify.
