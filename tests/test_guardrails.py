@@ -75,7 +75,7 @@ class GuardrailTests(unittest.TestCase):
                                    "--inventory", str(inventory),
                                    "--output", str(destination)])
             self.assertEqual(result, 2)
-            self.assertIn("verification status", error.getvalue())
+            self.assertIn("claims execution", error.getvalue())
             self.assertFalse(destination.exists())
 
     def test_report_output_rejects_existing_symlink(self):
