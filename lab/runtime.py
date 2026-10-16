@@ -326,8 +326,10 @@ def type_qmp_command(path: Path, command: str) -> None:
             cmd("qmp_capabilities")
             for char in command:
                 key = qcodes.get(char, char)
-                cmd("send-key", {"keys": [{"type": "qcode", "data": key}], "hold-time": 80})
-                time.sleep(0.025)
+                cmd("send-key", {"keys": [{"type": "qcode", "data": key}], "hold-time": 50})
+                # Wait for key release before sending the next key; overlapping
+                # QMP send-key calls can turn characters into unintended chords.
+                time.sleep(0.08)
             cmd("send-key", {"keys": [{"type": "qcode", "data": "ret"}], "hold-time": 80})
 
 
