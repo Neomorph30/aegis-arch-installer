@@ -225,6 +225,24 @@ class ReportSafetyTests(unittest.TestCase):
         p["tests"] = [{"name": "unsupported optional control", "result": "NOT_APPLICABLE"}]
         self.assertIn("NOT_APPLICABLE", html_report(p))
 
+    def test_json_and_html_preserve_same_non_pass_status_contract(self):
+        p = plan()
+        p["tests"] = [
+            {"name": "optional", "result": "NOT_APPLICABLE"},
+            {"name": "not run", "result": "NOT_RUN"},
+            {"name": "review", "result": "REVIEW_REQUIRED"},
+            {"name": "blocked", "result": "BLOCKED"},
+        ]
+        json_tests = public_view(p)["tests"]
+        html = html_report(p)
+        self.assertEqual(
+            [(t["name"], t["result"]) for t in json_tests],
+            [(t["name"], t["result"]) for t in p["tests"]],
+        )
+        for status in ("NOT_APPLICABLE", "NOT_RUN", "REVIEW_REQUIRED", "BLOCKED"):
+            self.assertIn(status, html)
+        self.assertNotIn(">PASSED</td>", html)
+
     def test_html_accepts_explicit_non_pass_proposal_statuses(self):
         p = plan()
         p["tests"] = [
