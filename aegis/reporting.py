@@ -13,7 +13,8 @@ REDACT_TERMS = (
 )
 IDENTIFIER_TERMS = {"serial", "wwn", "partuuid", "uuid", "mac_address"}
 SECRET_ASSIGNMENT = re.compile(
-    r"(?i)\b(password|passphrase|secret|token|recovery[_-]?key|tpm[_-]?pin)"
+    r"(?i)\b(password|passphrase|secret|credential|keyfile|token|"
+    r"recovery[_-]?key|tpm[_-]?pin|private[_-]?key|api[_-]?key)"
     r"\s*([=:])\s*([^\s,;]+)"
 )
 
