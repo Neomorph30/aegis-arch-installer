@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -196,6 +197,19 @@ class GuestScreenOCRFallbackTests(unittest.TestCase):
         from lab.runtime import _has_arch_live_root_prompt
 
         self.assertTrue(_has_arch_live_root_prompt("root@archiso ~ # _"))
+
+    @patch("lab.runtime.subprocess.run")
+    def test_live_prompt_ocr_uses_alternate_layout_after_timeout(self, run):
+        from lab.runtime import _guest_screen_ocr
+
+        run.side_effect = [
+            subprocess.TimeoutExpired("tesseract", 20),
+            SimpleNamespace(stdout="root@archiso ~ #"),
+        ]
+        result = _guest_screen_ocr(Path("/tmp/synthetic-screen.png"))
+        self.assertIn("root@archiso ~ #", result)
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(run.call_args_list[1].args[0][-1], "3")
 
     @patch("lab.runtime.subprocess.run")
     def test_prompt_ocr_avoids_second_pass_when_first_layout_matches(self, run):
