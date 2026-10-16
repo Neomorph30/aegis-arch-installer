@@ -1,7 +1,6 @@
 """Tests for the future guest-only write gate; no block devices are opened."""
 from __future__ import annotations
 
-import copy
 import unittest
 
 from lab.guest_storage_gate import (
@@ -49,6 +48,24 @@ class GuestStorageGateTests(unittest.TestCase):
         value["devices"].append(node("/dev/vdc", "HOST-DISK", 500 * 1024**3))
         with self.assertRaisesRegex(GuestStorageGateError, "exactly the two"):
             validate_lab_primary(value)
+
+    def test_root_devices_must_be_exact_whole_disks(self):
+        sample = fixture()
+        sample["devices"][1]["type"] = "part"
+        with self.assertRaisesRegex(GuestStorageGateError, "whole virtual disks"):
+            validate_lab_primary(sample)
+        sample = fixture()
+        sample["devices"][1]["serial"] = "AEGIS-LAB-PRIMARY"
+        with self.assertRaisesRegex(GuestStorageGateError, "exactly one AEGIS-LAB-PRIMARY"):
+            validate_lab_primary(sample)
+
+    def test_preexisting_partitions_block_lab_write_eligibility(self):
+        sample = fixture()
+        child = node("/dev/vda1", None, PRIMARY_BYTES - 1024**3)
+        child["type"] = "part"
+        sample["devices"][0]["children"] = [child]
+        with self.assertRaisesRegex(GuestStorageGateError, "must be blank whole disks"):
+            validate_lab_primary(sample)
 
     def test_primary_identity_and_capacity_are_exact(self):
         for key, value in (("serial", "OTHER"), ("size", PRIMARY_BYTES - 1)):
