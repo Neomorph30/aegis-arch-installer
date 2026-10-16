@@ -45,7 +45,10 @@ def validate_lab_primary(observation: dict[str, Any]) -> dict[str, Any]:
             raise GuestStorageGateError("Malformed block-device entry")
         path = node.get("path")
         kind = node.get("type")
-        if not isinstance(path, str) or not _DEVICE_PATH.fullmatch(path) or path in paths:
+        if (not isinstance(path, str)
+                or not _DEVICE_PATH.fullmatch(path)
+                or any(part in (".", "..") for part in path.split("/"))
+                or path in paths):
             raise GuestStorageGateError("Missing, invalid or duplicate device path")
         if not isinstance(kind, str) or not kind:
             raise GuestStorageGateError("Missing block-device type")
