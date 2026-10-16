@@ -159,3 +159,42 @@ class GuestPreflightLauncherTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GuestScreenOCRFallbackTests(unittest.TestCase):
+    @patch("lab.runtime.subprocess.run")
+    def test_live_prompt_ocr_retries_with_auto_segmentation(self, run):
+        from lab.runtime import _guest_screen_ocr
+
+        run.side_effect = [
+            SimpleNamespace(stdout="Arch Linux archiso login: root (automatic login)"),
+            SimpleNamespace(stdout="Arch Linux\nroot@archiso ~ #"),
+        ]
+        result = _guest_screen_ocr(Path("/tmp/synthetic-screen.png"))
+        self.assertIn("root@archiso ~ #", result)
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(run.call_args_list[0].args[0][-1], "6")
+        self.assertEqual(run.call_args_list[1].args[0][-1], "3")
+
+    @patch("lab.runtime.subprocess.run")
+    def test_preflight_marker_ocr_retries_with_auto_segmentation(self, run):
+        from lab.runtime import _guest_screen_ocr
+
+        marker = "AEGIS PREFLIGHT PASS WRITE AUTHORIZED FALSE WRITES PERFORMED FALSE"
+        run.side_effect = [
+            SimpleNamespace(stdout="root@archiso ~ #"),
+            SimpleNamespace(stdout=marker),
+        ]
+        result = _guest_screen_ocr(Path("/tmp/synthetic-screen.png"), preflight_result=True)
+        self.assertIn("AEGIS PREFLIGHT PASS", result)
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(run.call_args_list[0].args[0][-1], "6")
+        self.assertEqual(run.call_args_list[1].args[0][-1], "3")
+
+    @patch("lab.runtime.subprocess.run")
+    def test_prompt_ocr_avoids_second_pass_when_first_layout_matches(self, run):
+        from lab.runtime import _guest_screen_ocr
+
+        run.return_value = SimpleNamespace(stdout="root@archiso ~ #")
+        self.assertEqual(_guest_screen_ocr(Path("/tmp/synthetic-screen.png")), "root@archiso ~ #")
+        run.assert_called_once()
