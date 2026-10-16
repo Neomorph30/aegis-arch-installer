@@ -185,6 +185,48 @@ class ReportSafetyTests(unittest.TestCase):
                 self.assertEqual(redacted[key], "[REDACTED]")
 
 
+    def test_seeded_secret_variants_never_appear_in_shareable_html_or_json_view(self):
+        p = plan()
+        p["diagnostic_metadata"] = {
+            "tpm-pin": "SEED_TPM_PIN_7f31",
+            "luks_recovery_key": "SEED_LUKS_RECOVERY_2a9c",
+            "signing_private_key": "SEED_SIGNING_PRIVATE_6b14",
+            "api_key": "SEED_API_TOKEN_4d82",
+            "nested": [
+                {"password": "SEED_PASSWORD_8c23"},
+                {"notes": "credential=SEED_CREDENTIAL_5e17"},
+                {"detail": "token:SEED_TOKEN_1a90"},
+            ],
+        }
+        json_view = json.dumps(public_view(p), sort_keys=True)
+        html = html_report(p, shareable=True)
+        for secret in (
+            "SEED_TPM_PIN_7f31", "SEED_LUKS_RECOVERY_2a9c",
+            "SEED_SIGNING_PRIVATE_6b14", "SEED_API_TOKEN_4d82",
+            "SEED_PASSWORD_8c23", "SEED_CREDENTIAL_5e17", "SEED_TOKEN_1a90",
+        ):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, json_view)
+                self.assertNotIn(secret, html)
+
+    def test_report_never_invents_passed_test_evidence(self):
+        p = plan()
+        self.assertTrue(all(item.get("result") != "PASSED" for item in p["tests"]))
+        rendered = html_report(p)
+        self.assertNotIn(">PASSED</td>", rendered)
+        self.assertIn("NOT EXECUTED OR VERIFIED", rendered)
+
+    def test_shareable_json_view_redacts_hardware_identifiers_recursively(self):
+        value = {
+            "device": {"serial": "SEED_SERIAL_1", "wwn": "SEED_WWN_2"},
+            "nested": [{"mac_address": "SEED_MAC_3", "part_uuid": "SEED_PARTUUID_4"}],
+        }
+        encoded = json.dumps(public_view(value, shareable=True), sort_keys=True)
+        for secret in ("SEED_SERIAL_1", "SEED_WWN_2", "SEED_MAC_3", "SEED_PARTUUID_4"):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, encoded)
+
+
 class ProfileTests(unittest.TestCase):
     def test_nvidia_not_assumed_compatible(self):
         p = recommend(FIXTURE)
