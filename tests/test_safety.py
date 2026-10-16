@@ -193,6 +193,17 @@ class ReportSafetyTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "verification status"):
                     html_report(p)
 
+    def test_html_rejects_missing_verification_evidence(self):
+        p = plan()
+        del p["tests"]
+        with self.assertRaisesRegex(ValueError, "verification test evidence is missing"):
+            html_report(p)
+
+    def test_html_accepts_not_applicable_status(self):
+        p = plan()
+        p["tests"] = [{"name": "unsupported optional control", "result": "NOT_APPLICABLE"}]
+        self.assertIn("NOT_APPLICABLE", html_report(p))
+
     def test_html_accepts_explicit_non_pass_proposal_statuses(self):
         p = plan()
         p["tests"] = [
