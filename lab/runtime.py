@@ -289,10 +289,16 @@ GUEST_PREFLIGHT_COMMAND = "mount /dev/sr1 /mnt; python /mnt/gate.py --preflight 
 
 
 def _has_arch_live_root_prompt(ocr: str) -> bool:
-    """Require the actual root@archiso shell prompt, not boot-log words like root=."""
-    normalized = " ".join(ocr.casefold().split())
-    compact = "".join(char for char in normalized if char.isalnum() or char == "@")
-    return "root@archiso" in compact
+    """Require a shell-prompt-shaped root/archiso line, not boot-log words like root=."""
+    for line in ocr.casefold().splitlines():
+        compact = "".join(char for char in line if char.isalnum() or char in "@#")
+        if "root@archiso" in compact:
+            return True
+        # OCR can misread @, but a root + archiso + shell prompt marker on one
+        # line is still strong evidence; boot logs containing root= do not qualify.
+        if "root" in compact and "archiso" in compact and "#" in compact:
+            return True
+    return False
 
 
 def type_qmp_command(path: Path, command: str) -> None:
