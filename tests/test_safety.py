@@ -206,6 +206,20 @@ class ReportSafetyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "verification test evidence is missing"):
             html_report(p)
 
+    def test_html_rejects_non_list_verification_evidence(self):
+        p = plan()
+        p["tests"] = {"name": "not a list", "result": "SKIPPED"}
+        with self.assertRaisesRegex(ValueError, "verification tests must be a list"):
+            html_report(p)
+
+    def test_html_rejects_malformed_verification_entries(self):
+        for entry in ("SKIPPED", None, [], {"name": " ", "result": "SKIPPED"}):
+            with self.subTest(entry=entry):
+                p = plan()
+                p["tests"] = [entry]
+                with self.assertRaises(ValueError):
+                    html_report(p)
+
     def test_html_accepts_not_applicable_status(self):
         p = plan()
         p["tests"] = [{"name": "unsupported optional control", "result": "NOT_APPLICABLE"}]
