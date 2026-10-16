@@ -7,11 +7,13 @@ guest-only executor can build on tested, fail-closed checks.
 from __future__ import annotations
 
 from typing import Any
+import re
 
 PRIMARY_SERIAL = "AEGIS-LAB-PRIMARY"
 PRIMARY_BYTES = 24 * 1024**3
 SECONDARY_SERIAL = "AEGIS-LAB-SECONDARY"
 SECONDARY_BYTES = 8 * 1024**3
+_DEVICE_PATH = re.compile(r"^/dev/[A-Za-z0-9_.!:+-]+(?:/[A-Za-z0-9_.!:+-]+)*$")
 
 
 class GuestStorageGateError(ValueError):
@@ -43,7 +45,7 @@ def validate_lab_primary(observation: dict[str, Any]) -> dict[str, Any]:
             raise GuestStorageGateError("Malformed block-device entry")
         path = node.get("path")
         kind = node.get("type")
-        if not isinstance(path, str) or not path.startswith("/dev/") or path in paths:
+        if not isinstance(path, str) or not _DEVICE_PATH.fullmatch(path) or path in paths:
             raise GuestStorageGateError("Missing, invalid or duplicate device path")
         if not isinstance(kind, str) or not kind:
             raise GuestStorageGateError("Missing block-device type")
