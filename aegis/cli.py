@@ -41,7 +41,6 @@ def _write_new(path: str, content: str) -> None:
 
 
 def _write_json(path: str, data: dict[str, Any]) -> None:
-    validate_proposal_evidence(data)
     _write_new(path, json.dumps(public_view(data), indent=2, ensure_ascii=False) + "\n")
 
 
@@ -192,6 +191,7 @@ def wizard(inventory_file: str | None = None) -> int:
     raw_filename = _readline("\nWrite JSON proposal to NEW filename (Enter = do not save): ")
     filename = raw_filename.strip() if raw_filename is not None else ""
     if filename:
+        validate_proposal_evidence(plan)
         _write_json(filename, plan)
         print("Proposal written:", filename)
     print("\nNo installation or disk modifications occurred.")
@@ -327,6 +327,7 @@ def main(argv: list[str] | None = None) -> int:
             plan = build_storage_plan(inventory, args.primary, args.secondary,
                                       args.secondary_action, filesystem=args.filesystem)
             if args.output:
+                validate_proposal_evidence(plan)
                 _write_json(args.output, plan)
                 print("Read-only proposal saved:", args.output)
             else:
