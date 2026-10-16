@@ -241,9 +241,16 @@ class CLITests(unittest.TestCase):
     def test_live_observation_timeout_is_bounded(self):
         from lab.runtime import launch
         with patch('lab.runtime.shutil.which', return_value='/usr/bin/tesseract'):
-            with self.assertRaisesRegex(LabError, '30 to 240 seconds'):
+            with self.assertRaisesRegex(LabError, '30 to 480 seconds'):
                 launch(LabConfig(), Path('/not-opened.iso'), observe_live=True,
                        live_timeout_seconds=10)
+
+    def test_live_observation_rejects_timeout_above_extended_bound(self):
+        from lab.runtime import launch
+        with patch('lab.runtime.shutil.which', return_value='/usr/bin/tesseract'):
+            with self.assertRaisesRegex(LabError, '30 to 480 seconds'):
+                launch(LabConfig(), Path('/not-opened.iso'), observe_live=True,
+                       live_timeout_seconds=481)
 
 if __name__ == '__main__':
     unittest.main()
