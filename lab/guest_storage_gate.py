@@ -185,9 +185,11 @@ def observe_guest_storage() -> dict[str, Any]:
         serial = node.get("serial")
         if isinstance(serial, str) and serial.strip():
             serial_counts[serial.strip()] = serial_counts.get(serial.strip(), 0) + 1
-        children = node.get("children")
+        # lsblk omits the "children" key for leaf devices even with --tree.
+        # Treat an absent key as an empty leaf, but reject an explicitly malformed value.
+        children = node.get("children", [])
         if not isinstance(children, list):
-            raise GuestStorageGateError("lsblk omitted child topology")
+            raise GuestStorageGateError("lsblk returned malformed child topology")
         for child in children:
             count_serial(child)
 
@@ -230,7 +232,9 @@ def observe_guest_storage() -> dict[str, Any]:
         mounts = [item for item in mounts if isinstance(item, str) and item.strip()]
         serial = node.get("serial")
         serial = serial.strip() if isinstance(serial, str) and serial.strip() else None
-        children = node.get("children")
+        # lsblk omits "children" on leaf devices; --tree includes nested
+        # devices when present. The normalized gate input always gets a list.
+        children = node.get("children", [])
         if not isinstance(children, list):
             raise GuestStorageGateError(f"Unable to verify child topology for {path}")
         if not isinstance(node.get("size"), int) or isinstance(node.get("size"), bool):
