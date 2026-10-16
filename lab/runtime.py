@@ -173,6 +173,7 @@ def command_lines(
     interactive: bool = False,
     network_mode: str = "disabled",
     observe_boot: bool = False,
+    observe_guest_preflight: bool = False,
 ) -> tuple[list[str], list[str]]:
     """Construct hard-coded QEMU options; no user-supplied QEMU options."""
     config.validate()
@@ -186,6 +187,10 @@ def command_lines(
             raise LabError(f"Unexpected {name} path")
     if "iso" in prepared and prepared["iso"] != folder / "installer.iso":
         raise LabError("Unexpected ISO path")
+    if "payload_iso" in prepared and prepared["payload_iso"] != folder / "guest-preflight.iso":
+        raise LabError("Unexpected guest preflight payload path")
+    if observe_guest_preflight and ("iso" not in prepared or "payload_iso" not in prepared):
+        raise LabError("Guest preflight observation requires both verified installer and payload ISOs")
     # QEMU option-valued paths cannot contain argument separators.
     paths = [str(folder), str(firmware[0]), str(firmware[1])]
     if any(any(char in v for char in ",\n\r") for v in paths):
@@ -216,6 +221,10 @@ def command_lines(
                  "-drive", f"if=none,id=installer,media=cdrom,format=raw,readonly=on,file={prepared['iso']}",
                  "-device", "virtio-scsi-pci,id=scsi0",
                  "-device", "scsi-cd,bus=scsi0.0,drive=installer"]
+    if "payload_iso" in prepared:
+        # The guest test harness is a separate read-only optical medium, never a block target.
+        qemu += ["-drive", f"if=none,id=guestpayload,media=cdrom,format=raw,readonly=on,file={prepared['payload_iso']}",
+                 "-device", "scsi-cd,bus=scsi0.0,drive=guestpayload"]
     return tpm, qemu
 
 
