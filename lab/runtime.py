@@ -209,6 +209,10 @@ def command_lines(
             "-monitor", "none", "-serial", "none",
             "-nic", "none" if network_mode == "disabled" else "user,model=virtio-net-pci",
             "-device", "VGA",
+            # -nodefaults suppresses implicit input devices; add a guest-only
+            # virtual USB controller and keyboard so QMP keystrokes reach Arch.
+            "-device", "qemu-xhci,id=usb",
+            "-device", "usb-kbd,bus=usb.0",
             "-qmp", f"unix:{prepared['qmp_sock']},server=on,wait=off",
             "-drive", f"if=pflash,format=raw,readonly=on,file={firmware[0]}",
             "-drive", f"if=pflash,format=raw,file={prepared['vars']}",
