@@ -541,6 +541,7 @@ def launch(
                         attempts = 0
                         prompt_detected = False
                         last_prompt_ocr = ""
+                        matched_prompt_ocr = ""
                         while time.monotonic() < deadline:
                             attempts += 1
                             query_qmp(paths["qmp_sock"], screenshot)
@@ -559,6 +560,7 @@ def launch(
                             )[:320]
                             if _has_arch_live_root_prompt(normalized_ocr):
                                 prompt_detected = True
+                                matched_prompt_ocr = last_prompt_ocr
                                 break
                             if vm_proc.poll() is not None:
                                 raise LabError("QEMU exited before guest preflight prompt appeared")
@@ -609,9 +611,11 @@ def launch(
                                 raise LabError("QEMU exited before guest preflight result was observed")
                             time.sleep(2.0)
                         if not preflight_passed:
+                            prompt_detail = f"; OCR that triggered prompt detection: {matched_prompt_ocr}" if matched_prompt_ocr else ""
                             detail = f"; last guest screen OCR: {last_preflight_ocr}" if last_preflight_ocr else ""
                             raise LabError(
-                                "Guest preflight success marker not observed; no write operation was run" + detail
+                                "Guest preflight success marker not observed; no write operation was run"
+                                + prompt_detail + detail
                             )
                         evidence = {
                             "qmp_running": True,
