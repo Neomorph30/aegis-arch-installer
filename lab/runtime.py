@@ -297,7 +297,7 @@ def _has_arch_live_root_prompt(ocr: str) -> bool:
         normalized = " ".join(line.split())
         # A prompt ends with '#'. Requiring it at end-of-line avoids boot-log
         # false positives such as a hook's '#2' followed by more log text.
-        if re.search(r"\\broot\\s*@?\\s*archiso\\b.*#\\s*$", normalized):
+        if re.search(r"\broot\s*@?\s*archiso\b.*#\s*$", normalized):
             return True
     return False
 
