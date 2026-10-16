@@ -48,7 +48,7 @@ class GuestPreflightLauncherTests(unittest.TestCase):
             )
         self.assertIn("qemu-xhci,id=usb", qemu)
         self.assertIn("usb-kbd,bus=usb.0", qemu)
-        self.assertIn("scsi-cd,bus=scsi0.0,scsi-id=1,drive=guestpayload", qemu)
+        self.assertFalse(any("scsi-id=1,drive=guestpayload" in arg for arg in qemu))
         payload_drive = next(arg for arg in qemu if "id=guestpayload" in arg and arg.startswith("if=none"))
         self.assertIn("readonly=on", payload_drive)
 
