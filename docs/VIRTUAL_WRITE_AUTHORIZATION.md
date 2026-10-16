@@ -56,9 +56,11 @@ in `RELEASE_GATES.md` are independently reviewed and satisfied.
 ## Current evidence and limits
 
 Unit tests for the pure gate use synthetic JSON only and never open block devices.
-The live preflight command is new and still needs CI verification on its latest
-commit; it must first be exercised inside the disposable guest before any writer
-is considered. The existing QEMU smoke test proves launch and virtual TPM
-registration, not guest boot, Arch installation, encryption, or recovery. A
-successful preflight result must never be described as an installation or write
-authorization.
+The Arch live-boot CI now verifies the official ISO SHA-256, detects the Arch
+live environment and root prompt from the guest display, and confirms QEMU and
+the virtual TPM remain running with guest networking disabled. This verifies
+boot into the live environment, not execution of the Python guest preflight.
+The preflight has passed synthetic and mocked-observer tests, but still must be
+executed inside the disposable guest before any writer is considered. Arch
+installation, encryption and recovery remain unverified. A successful preflight
+result must never be described as an installation or write authorization.
