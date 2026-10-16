@@ -65,6 +65,19 @@ class NetworkTests(unittest.TestCase):
     def test_iwd_fallback_on_archiso(self, _which, _nm):
         self.assertEqual(network.setup_tool(), ("iwd (iwctl)", ["/usr/bin/iwctl"]))
 
+    @patch("aegis.network.sys.stdin.isatty", return_value=True)
+    @patch("aegis.network.sys.stdout.isatty", return_value=True)
+    @patch("aegis.network.setup_tool", return_value=("iwd", ["/usr/bin/iwctl"]))
+    def test_wifi_start_error_does_not_chain_os_details(self, _tool, _out, _in):
+        with patch(
+            "aegis.network.subprocess.run",
+            side_effect=OSError("private-path-or-environment-detail"),
+        ):
+            with self.assertRaises(network.NetworkSetupError) as caught:
+                network.launch_wifi_setup()
+        self.assertIsNone(caught.exception.__cause__)
+        self.assertNotIn("private-path-or-environment-detail", str(caught.exception))
+
     @patch("aegis.network.sys.stdout.isatty", return_value=False)
     def test_never_launch_wifi_noninteractive(self, _tty):
         with patch("aegis.network.subprocess.run") as run:
