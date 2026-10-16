@@ -472,6 +472,78 @@ def launch(
                             "boot_ocr_attempts": attempts,
                             "guest_boot_verified": True,
                         }
+                    elif observe_guest_preflight:
+                        screenshot = folder / "guest-preflight-screen.png"
+                        deadline = time.monotonic() + live_timeout_seconds
+                        attempts = 0
+                        prompt_detected = False
+                        while time.monotonic() < deadline:
+                            attempts += 1
+                            query_qmp(paths["qmp_sock"], screenshot)
+                            try:
+                                ocr = subprocess.run(
+                                    ["tesseract", str(screenshot), "stdout", "--psm", "6"],
+                                    check=True, capture_output=True, text=True, timeout=20,
+                                ).stdout
+                            except subprocess.TimeoutExpired:
+                                if vm_proc.poll() is not None:
+                                    raise LabError("QEMU exited while waiting for guest preflight prompt")
+                                continue
+                            normalized_ocr = " ".join(ocr.casefold().split())
+                            if "archiso" in normalized_ocr and "root" in normalized_ocr:
+                                prompt_detected = True
+                                break
+                            if vm_proc.poll() is not None:
+                                raise LabError("QEMU exited before guest preflight prompt appeared")
+                            time.sleep(2.0)
+                        if not prompt_detected:
+                            raise LabError("Arch live prompt not detected; guest preflight was not run")
+                        # This is a fixed, lowercase command. The guest script is mounted from a
+                        # separate read-only ISO; no command or path is supplied by the caller.
+                        type_qmp_command(
+                            paths["qmp_sock"],
+                            "mount /dev/sr1 /mnt; python /mnt/gate.py --preflight --marker",
+                        )
+                        preflight_deadline = time.monotonic() + min(90, live_timeout_seconds)
+                        preflight_attempts = 0
+                        preflight_passed = False
+                        while time.monotonic() < preflight_deadline:
+                            preflight_attempts += 1
+                            query_qmp(paths["qmp_sock"], screenshot)
+                            try:
+                                ocr = subprocess.run(
+                                    ["tesseract", str(screenshot), "stdout", "--psm", "6"],
+                                    check=True, capture_output=True, text=True, timeout=20,
+                                ).stdout
+                            except subprocess.TimeoutExpired:
+                                if vm_proc.poll() is not None:
+                                    raise LabError("QEMU exited while guest preflight result was pending")
+                                continue
+                            normalized_ocr = " ".join(ocr.casefold().split())
+                            if ("aegis preflight pass" in normalized_ocr
+                                    and "write authorized false" in normalized_ocr
+                                    and "writes performed false" in normalized_ocr):
+                                preflight_passed = True
+                                break
+                            if "aegis preflight blocked" in normalized_ocr:
+                                raise LabError("Guest storage preflight returned BLOCKED; see guest screenshot OCR")
+                            if vm_proc.poll() is not None:
+                                raise LabError("QEMU exited before guest preflight result was observed")
+                            time.sleep(2.0)
+                        if not preflight_passed:
+                            raise LabError("Guest preflight success marker not observed; no write operation was run")
+                        evidence = {
+                            "qmp_running": True,
+                            "qmp_tpm_detected": True,
+                            "screenshot_captured": True,
+                            "live_environment_detected": True,
+                            "guest_preflight_executed": True,
+                            "guest_preflight_passed": True,
+                            "guest_preflight_write_authorized": False,
+                            "guest_preflight_writes_performed": False,
+                            "guest_preflight_ocr_attempts": preflight_attempts,
+                            "guest_boot_verified": True,
+                        }
                     else:
                         evidence = query_qmp(paths["qmp_sock"])
                     deadline = time.monotonic() + config.seconds
@@ -481,10 +553,10 @@ def launch(
                         time.sleep(min(.1, max(.001, deadline - time.monotonic())))
                     if vm_proc.poll() is not None:
                         raise LabError("QEMU exited during launch smoke interval")
-                    return {"status": ("LIVE_ENVIRONMENT_DETECTED" if observe_live else ("BOOT_MENU_DETECTED" if observe_boot else "LAUNCH_SMOKE_PASSED")),
+                    return {"status": ("GUEST_PREFLIGHT_PASSED" if observe_guest_preflight else ("LIVE_ENVIRONMENT_DETECTED" if observe_live else ("BOOT_MENU_DETECTED" if observe_boot else "LAUNCH_SMOKE_PASSED"))),
                             "seconds": config.seconds,
-                            "live_timeout_seconds": live_timeout_seconds if observe_live else None,
-                            "guest_boot_verified": bool((observe_boot and evidence.get("arch_boot_menu_detected")) or (observe_live and evidence.get("live_environment_detected"))),
+                            "live_timeout_seconds": live_timeout_seconds if (observe_live or observe_guest_preflight) else None,
+                            "guest_boot_verified": bool((observe_boot and evidence.get("arch_boot_menu_detected")) or (observe_live and evidence.get("live_environment_detected")) or (observe_guest_preflight and evidence.get("guest_preflight_passed"))),
                             "installation_performed": False,
                             "network_mode": network_mode,
                             "guest_network_enabled": network_mode == "user-nat-explicit",
@@ -564,7 +636,7 @@ def main(argv: list[str] | None = None) -> int:
         print("AEGIS lab interrupted; disposable workspace cleaned up.", file=sys.stderr)
         return 130
     print(json.dumps(result, indent=2, sort_keys=True))
-    return 0 if args.smoke or args.observe_boot or args.observe_live or result.get("exit_code") == 0 else 1
+    return 0 if args.smoke or args.observe_boot or args.observe_live or args.observe_guest_preflight or result.get("exit_code") == 0 else 1
 
 
 if __name__ == "__main__":
