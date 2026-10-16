@@ -60,10 +60,12 @@ class PlannerTests(unittest.TestCase):
 
     def test_report_escapes_html_and_redacts_secrets(self):
         plan = build_storage_plan(inventory(), "/dev/nvme0n1")
-        plan["tpm_pin"] = "12345"
+        secret = "AEGIS-TEST-SECRET-TPM-PIN-91A7"
+        plan["tpm_pin"] = secret
         plan["warnings"].append("bad <script>alert('x')</script>")
         output = html_report(plan)
-        self.assertNotIn("12345", output)
+        self.assertNotIn(secret, output)
+        self.assertIn("&quot;tpm_pin&quot;: &quot;[REDACTED]&quot;", output)
         self.assertNotIn("<script>", output)
         self.assertIn("&lt;script&gt;", output)
         self.assertEqual(public_view({"password": "pw"})["password"], "[REDACTED]")
