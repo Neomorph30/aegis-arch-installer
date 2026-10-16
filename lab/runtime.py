@@ -312,7 +312,7 @@ def type_qmp_command(path: Path, command: str) -> None:
                 request: dict[str, object] = {"execute": name}
                 if arguments is not None:
                     request["arguments"] = arguments
-                stream.write(json.dumps(request).encode() + b"\\n")
+                stream.write(json.dumps(request).encode() + b"\n")
                 stream.flush()
                 reply = receive()
                 if "return" not in reply:
