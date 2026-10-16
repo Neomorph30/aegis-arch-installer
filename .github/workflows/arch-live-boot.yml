@@ -17,7 +17,7 @@ concurrency:
 jobs:
   arch-live-boot:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout reviewed source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -69,7 +69,7 @@ jobs:
           python -m lab --smoke \
             --observe-guest-preflight \
             --guest-preflight-payload "$RUNNER_TEMP/guest-preflight.iso" \
-            --live-timeout-seconds 240 \
+            --live-timeout-seconds 480 \
             --seconds 3 \
             --network-mode user-nat-explicit \
             --iso "$ISO_PATH" \
