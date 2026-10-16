@@ -47,9 +47,25 @@ class GuardrailTests(unittest.TestCase):
     def test_reports_exclusively_create_mode_600_files(self):
         with tempfile.TemporaryDirectory() as d:
             destination = Path(d) / "plan.json"
-            _write_json(str(destination), {"status": "PROPOSAL_ONLY", "password": "hush"})
+            _write_json(str(destination), {
+                "status": "PROPOSAL_ONLY",
+                "password": "pw-seeded-1",
+                "tpm-pin": "pin-seeded-2",
+                "luks_recovery_key": "recovery-seeded-3",
+                "signing_private_key": "private-seeded-4",
+                "api_key": "api-seeded-5",
+                "details": "credential=string-seeded-6 token:string-seeded-7",
+            })
             self.assertEqual(os.stat(destination).st_mode & 0o777, 0o600)
-            self.assertEqual(json.loads(destination.read_text())["password"], "[REDACTED]")
+            rendered = destination.read_text(encoding="utf-8")
+            for secret in ("pw-seeded-1", "pin-seeded-2", "recovery-seeded-3",
+                           "private-seeded-4", "api-seeded-5", "string-seeded-6",
+                           "string-seeded-7"):
+                self.assertNotIn(secret, rendered)
+            clean = json.loads(rendered)
+            self.assertEqual(clean["password"], "[REDACTED]")
+            self.assertEqual(clean["tpm-pin"], "[REDACTED]")
+            self.assertEqual(clean["luks_recovery_key"], "[REDACTED]")
             with self.assertRaises(FileExistsError):
                 _write_json(str(destination), {"x": True})
 
