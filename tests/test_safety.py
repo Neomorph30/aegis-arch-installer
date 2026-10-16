@@ -127,7 +127,8 @@ class StorageSafetyTests(unittest.TestCase):
         self.assertTrue(all(t["result"] != "PASSED" for t in p["tests"]))
 
 
-class ReportSafetyTests(unittest.TestCase):\n
+class ReportSafetyTests(unittest.TestCase):
+
     def test_shared_proposal_evidence_validator_rejects_forged_json_status(self):
         for result in ("PASSED", "PASS", "SUCCESS", "verified", None, ""):
             with self.subTest(result=result):
