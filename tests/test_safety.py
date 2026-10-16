@@ -186,18 +186,11 @@ class ReportSafetyTests(unittest.TestCase):
 
 
     def test_compound_luks_recovery_key_assignment_is_redacted(self):
-        rendered = html_report(plan())
-        # Exercise the text sanitizer directly: this compound spelling was
-        # not covered by the existing individual-key-name tests.
-        sanitized = public_view(
-            {"warning": "luks_recovery_key=RECOVERY-MATERIAL"},
-            shareable=True,
-        )
-        self.assertNotIn("RECOVERY-MATERIAL", json.dumps(sanitized))
-        self.assertEqual(
-            sanitized["warning"],
-            "luks_recovery_key=[REDACTED]",
-        )
+        p = plan()
+        p["warnings"].append("luks_recovery_key=RECOVERY-MATERIAL")
+        rendered = html_report(p)
+        self.assertNotIn("RECOVERY-MATERIAL", rendered)
+        self.assertIn("luks_recovery_key=[REDACTED]", rendered)
 
     def test_html_rejects_forged_passed_or_unknown_verification_status(self):
         for result in ("PASSED", "PASS", "SUCCESS", "verified"):
