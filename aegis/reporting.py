@@ -17,7 +17,7 @@ REDACT_TERMS = {
 IDENTIFIER_TERMS = {"serial", "wwn", "partuuid", "uuid", "macaddress"}
 PROPOSAL_TEST_STATUSES = frozenset({
     "BLOCKED", "FAILED", "SKIPPED", "UNVERIFIED", "WARNING",
-    "REVIEW_REQUIRED", "NOT_RUN",
+    "REVIEW_REQUIRED", "NOT_RUN", "NOT_APPLICABLE",
 })
 
 SECRET_ASSIGNMENT = re.compile(
@@ -57,7 +57,9 @@ def html_report(plan: dict[str, Any], *, shareable: bool = True) -> str:
     # This renderer is for a proposal-only plan, never a record of executed
     # controls. Fail closed on PASSED or unknown statuses rather than trusting
     # caller-supplied JSON to assert that a security check ran successfully.
-    tests = clean.get("tests", [])
+    if "tests" not in clean:
+        raise ValueError("Refusing report: verification test evidence is missing")
+    tests = clean["tests"]
     if not isinstance(tests, list):
         raise ValueError("Refusing report: verification tests must be a list")
     for item in tests:
