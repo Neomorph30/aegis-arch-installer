@@ -56,21 +56,21 @@ def public_view(value: Any, *, shareable: bool = False) -> Any:
 def validate_proposal_evidence(plan: Any) -> None:
     """Fail closed on missing/malformed evidence or statuses implying execution."""
     if not isinstance(plan, dict) or plan.get("status") != "PROPOSAL_ONLY" or plan.get("execution_enabled") is not False:
-        raise ValueError("Refusing proposal output: input is not a non-executable AEGIS proposal")
+        raise ValueError("Refusing report: input is not a non-executable AEGIS proposal")
     if "tests" not in plan:
-        raise ValueError("Refusing proposal output: verification test evidence is missing")
+        raise ValueError("Refusing report: verification test evidence is missing")
     tests = plan["tests"]
     if not isinstance(tests, list):
-        raise ValueError("Refusing proposal output: verification tests must be a list")
+        raise ValueError("Refusing report: verification tests must be a list")
     for item in tests:
         if not isinstance(item, dict):
-            raise ValueError("Refusing proposal output: malformed verification test entry")
+            raise ValueError("Refusing report: malformed verification test entry")
         name = item.get("name")
         result = item.get("result")
         if not isinstance(name, str) or not name.strip():
-            raise ValueError("Refusing proposal output: verification test is missing a name")
+            raise ValueError("Refusing report: verification test is missing a name")
         if not isinstance(result, str) or result not in PROPOSAL_TEST_STATUSES:
-            raise ValueError("Refusing proposal output: proposal-only verification status is invalid or claims execution")
+            raise ValueError("Refusing report: proposal-only verification status is invalid or claims execution")
 
 
 def html_report(plan: dict[str, Any], *, shareable: bool = True) -> str:
