@@ -64,8 +64,8 @@ jobs:
           mkdir -m 700 "$RUNNER_TEMP/guest-payload"
           cp lab/guest_storage_gate.py "$RUNNER_TEMP/guest-payload/gate.py"
           xorriso -as mkisofs -quiet -o "$RUNNER_TEMP/guest-preflight.iso" "$RUNNER_TEMP/guest-payload"
-          # User-mode NAT is explicit and guest-only; never bridge or pass through host devices.
-          # This permits guest time synchronization; the installer still runs no network setup.
+          # Explicit user-mode NAT is guest-only: no bridge or host-device passthrough.
+          # This is lab networking only; it does not enable installer network setup.
           python -m lab --smoke \
             --observe-guest-preflight \
             --guest-preflight-payload "$RUNNER_TEMP/guest-preflight.iso" \
