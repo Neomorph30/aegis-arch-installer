@@ -598,6 +598,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="capture loopback-only VNC screenshot and verify Arch UEFI boot-menu text with OCR")
     parser.add_argument("--observe-live", action="store_true",
                         help="wait for an Arch live-environment root prompt using screenshot OCR (requires verified ISO)")
+    parser.add_argument("--observe-guest-preflight", action="store_true",
+                        help="run the read-only storage gate inside Arch from a separate read-only payload ISO")
+    parser.add_argument("--guest-preflight-payload", type=Path,
+                        help="separately prepared ISO containing guest_storage_gate.py as gate.py")
     parser.add_argument("--live-timeout-seconds", type=int, default=120,
                         help="live environment observation timeout (30–240 seconds)")
     parser.add_argument("--iso", type=Path, help="optional local Arch ISO to verify and copy into private lab")
@@ -609,11 +613,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ram-mib", type=int, default=2048)
     parser.add_argument("--cpus", type=int, default=2)
     args = parser.parse_args(argv)
-    if (args.observe_boot or args.observe_live) and not args.smoke:
+    if (args.observe_boot or args.observe_live or args.observe_guest_preflight) and not args.smoke:
         print("AEGIS lab refused: boot observation must be paired with --smoke.", file=sys.stderr)
         return 2
-    if args.observe_boot and args.observe_live:
+    if sum((args.observe_boot, args.observe_live, args.observe_guest_preflight)) > 1:
         print("AEGIS lab refused: choose only one boot observation mode.", file=sys.stderr)
+        return 2
+    if args.observe_guest_preflight and args.guest_preflight_payload is None:
+        print("AEGIS lab refused: guest preflight requires --guest-preflight-payload.", file=sys.stderr)
+        return 2
+    if args.guest_preflight_payload is not None and not args.observe_guest_preflight:
+        print("AEGIS lab refused: payload requires --observe-guest-preflight.", file=sys.stderr)
         return 2
     if args.check:
         print(json.dumps(dependencies(), indent=2, sort_keys=True))
@@ -626,9 +636,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         result = launch(LabConfig(ram_mib=args.ram_mib, cpus=args.cpus, seconds=args.seconds),
-                        args.iso, iso_sha256=args.iso_sha256, smoke=args.smoke,
-                        network_mode=args.network_mode, observe_boot=args.observe_boot,
-                        observe_live=args.observe_live, live_timeout_seconds=args.live_timeout_seconds)
+                        args.iso, iso_sha256=args.iso_sha256, payload_iso=args.guest_preflight_payload,
+                        smoke=args.smoke, network_mode=args.network_mode, observe_boot=args.observe_boot,
+                        observe_live=args.observe_live, observe_guest_preflight=args.observe_guest_preflight,
+                        live_timeout_seconds=args.live_timeout_seconds)
     except (LabError, OSError) as exc:
         print(f"AEGIS lab refused/failed: {exc}", file=sys.stderr)
         return 2
