@@ -134,7 +134,7 @@ def _copy_regular_file(src: Path, dst: Path, *, max_bytes: int) -> int:
         os.close(fd)
 
 
-def prepare_workspace(workspace: Path, config: LabConfig, firmware: tuple[Path, Path], iso: Path | None, *, iso_sha256: str | None = None) -> dict[str, Path]:
+def prepare_workspace(workspace: Path, config: LabConfig, firmware: tuple[Path, Path], iso: Path | None, *, iso_sha256: str | None = None, payload_iso: Path | None = None) -> dict[str, Path]:
     """Only call inside private TemporaryDirectory created by this process."""
     config.validate()
     if not workspace.is_dir() or workspace.is_symlink() or (workspace.stat().st_mode & 0o077):
@@ -143,6 +143,8 @@ def prepare_workspace(workspace: Path, config: LabConfig, firmware: tuple[Path, 
         raise LabError("An ISO requires an independently supplied --iso-sha256 digest")
     if iso is None and iso_sha256 is not None:
         raise LabError("An ISO digest was supplied without an ISO path")
+    if payload_iso is not None and iso is None:
+        raise LabError("A guest preflight payload requires the verified Arch ISO")
     p = workspace / "primary.raw"
     s = workspace / "secondary.raw"
     _exclusive_sparse_file(p, config.primary_bytes)
@@ -162,6 +164,10 @@ def prepare_workspace(workspace: Path, config: LabConfig, firmware: tuple[Path, 
         except ISOValidationError as exc:
             raise LabError(f"Installer ISO verification failed: {exc}") from exc
         result["iso"] = dst
+    if payload_iso is not None:
+        payload_dst = workspace / "guest-preflight.iso"
+        _copy_regular_file(payload_iso, payload_dst, max_bytes=32 * 1024 * 1024)
+        result["payload_iso"] = payload_dst
     return result
 
 
