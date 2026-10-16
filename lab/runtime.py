@@ -369,8 +369,16 @@ def launch(
                             try:
                                 ocr = subprocess.run(
                                     ["tesseract", str(screenshot), "stdout", "--psm", "6"],
-                                    check=True, capture_output=True, text=True, timeout=10,
+                                    check=True, capture_output=True, text=True, timeout=20,
                                 ).stdout
+                            except subprocess.TimeoutExpired:
+                                # OCR can be slow on heavily contended software-emulation runners.
+                                # A timeout is not evidence of boot failure; retry only within the
+                                # existing overall live-boot deadline and never infer success.
+                                if vm_proc.poll() is not None:
+                                    raise LabError("QEMU exited while live-environment OCR timed out")
+                                time.sleep(1.0)
+                                continue
                             except (OSError, subprocess.SubprocessError) as exc:
                                 detail = getattr(exc, "stderr", None)
                                 if isinstance(detail, bytes):
