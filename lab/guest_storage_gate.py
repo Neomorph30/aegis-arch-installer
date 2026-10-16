@@ -86,6 +86,8 @@ def validate_lab_primary(observation: dict[str, Any]) -> dict[str, Any]:
     secondary = secondary_matches[0]
     if secondary.get("size") != SECONDARY_BYTES or secondary.get("ro") not in (True, 1):
         raise GuestStorageGateError("Secondary lab disk must match its exact capacity and be read-only")
+    if secondary.get("rm") not in (False, 0):
+        raise GuestStorageGateError("Removable secondary lab disks are forbidden")
 
     target = serial_matches[0]
     if target.get("type") != "disk" or target.get("size") != PRIMARY_BYTES:
