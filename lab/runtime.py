@@ -352,6 +352,8 @@ def _guest_screen_ocr(screenshot: Path, *, timeout: int = 20, preflight_result: 
             return second
     elif _has_arch_live_root_prompt(second):
         return second
+    if first is None:
+        return second
     return second if len(second) > len(first) else first
 
 
