@@ -21,6 +21,12 @@ class GuestPreflightLauncherTests(unittest.TestCase):
             "root@archiso early hook #2 running hook archisol_loop_mnt"
         ))
         self.assertFalse(_has_arch_live_root_prompt(
+            "root@archiso ~ #\\nservice starting"
+        ))
+        self.assertFalse(_has_arch_live_root_prompt(
+            "archiso login: root automatic login to install arch linux"
+        ))
+        self.assertFalse(_has_arch_live_root_prompt(
             "running hook archiso_loop_mnt root=/dev/ram0 early hook udev"
         ))
         self.assertFalse(_has_arch_live_root_prompt("Arch Linux install medium"))
