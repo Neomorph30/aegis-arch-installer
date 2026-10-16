@@ -90,8 +90,6 @@ def validate_lab_primary(observation: dict[str, Any]) -> dict[str, Any]:
     target = serial_matches[0]
     if target.get("type") != "disk" or target.get("size") != PRIMARY_BYTES:
         raise GuestStorageGateError("Lab primary disk type or exact capacity does not match")
-    if target.get("children") != [] or secondary.get("children") != []:
-        raise GuestStorageGateError("Lab disks must be blank whole disks before a write plan is considered")
     if target.get("ro") not in (False, 0):
         raise GuestStorageGateError("Lab primary disk is read-only or its state is unknown")
     if target.get("rm") not in (False, 0):
@@ -102,7 +100,8 @@ def validate_lab_primary(observation: dict[str, Any]) -> dict[str, Any]:
         raise GuestStorageGateError("Stable lab primary serial is missing")
 
     for node in all_nodes:
-        if node.get("mountpoints"):
+        mounts = node.get("mountpoints", [])
+        if any(isinstance(item, str) and item.strip() for item in mounts):
             raise GuestStorageGateError("Mounted block devices are forbidden for lab writes")
         if node.get("holders"):
             raise GuestStorageGateError("Block-device holders are forbidden for lab writes")
@@ -110,6 +109,9 @@ def validate_lab_primary(observation: dict[str, Any]) -> dict[str, Any]:
             raise GuestStorageGateError("Active or unknown swap state blocks lab writes")
         if node.get("ambiguous") is not False:
             raise GuestStorageGateError("Ambiguous device identity blocks lab writes")
+
+    if target.get("children") != [] or secondary.get("children") != []:
+        raise GuestStorageGateError("Lab disks must be blank whole disks before a write plan is considered")
 
     return {
         "schema_version": 1,
