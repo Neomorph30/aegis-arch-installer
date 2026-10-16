@@ -15,7 +15,7 @@ from .inventory import assess_inventory
 from .network import NetworkSetupError, interactive_preflight, network_preflight, print_network_status, launch_wifi_setup
 from .planner import PlanError, build_storage_plan
 from .profiles import recommend
-from .reporting import html_report, public_view
+from .reporting import html_report, public_view, validate_proposal_evidence
 
 MAX_JSON_INPUT_BYTES = 2 * 1024 * 1024
 
@@ -329,6 +329,7 @@ def main(argv: list[str] | None = None) -> int:
                 _write_json(args.output, plan)
                 print("Read-only proposal saved:", args.output)
             else:
+                validate_proposal_evidence(plan)
                 print(json.dumps(public_view(plan), indent=2))
         elif args.command == "wizard":
             return wizard(args.inventory)
