@@ -183,7 +183,15 @@ class GuestStorageGateTests(unittest.TestCase):
     def test_duplicate_paths_and_incomplete_topology_block(self):
         sample = fixture()
         sample["devices"][1]["path"] = sample["devices"][0]["path"]
-        with self.assertRaisesRegex(GuestStorageGateError, "duplicate"):
+        with self.assertRaisesRegex(GuestStorageGateError, "invalid or duplicate"):
+            validate_lab_primary(sample)
+        sample = fixture()
+        sample["devices"][0]["path"] = "/dev/../sda"
+        with self.assertRaisesRegex(GuestStorageGateError, "invalid or duplicate"):
+            validate_lab_primary(sample)
+        sample = fixture()
+        sample["devices"][0]["path"] = "/dev/vda;echo"
+        with self.assertRaisesRegex(GuestStorageGateError, "invalid or duplicate"):
             validate_lab_primary(sample)
         sample = fixture()
         sample["devices"][0].pop("children")
