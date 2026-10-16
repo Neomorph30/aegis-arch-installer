@@ -88,7 +88,7 @@ class MenuIntegrationTests(unittest.TestCase):
             self.assertIn("EXAMPLE", out.getvalue())
             self.assertIn("Exiting without changes", out.getvalue())
 
-    def test_unattended_invocation_prints_help_not-prompts(self):
+    def test_unattended_invocation_prints_help_not_prompts(self):
         p = cli()
         self.assertEqual(p.returncode, 0)
         self.assertIn("usage", p.stdout)
