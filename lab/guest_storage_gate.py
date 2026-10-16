@@ -90,6 +90,8 @@ def validate_lab_primary(observation: dict[str, Any]) -> dict[str, Any]:
     target = serial_matches[0]
     if target.get("type") != "disk" or target.get("size") != PRIMARY_BYTES:
         raise GuestStorageGateError("Lab primary disk type or exact capacity does not match")
+    if target.get("children") != [] or secondary.get("children") != []:
+        raise GuestStorageGateError("Lab disks must be blank whole disks before a write plan is considered")
     if target.get("ro") not in (False, 0):
         raise GuestStorageGateError("Lab primary disk is read-only or its state is unknown")
     if target.get("rm") not in (False, 0):
