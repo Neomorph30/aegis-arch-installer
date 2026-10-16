@@ -5,6 +5,7 @@ import unittest
 from contextlib import redirect_stdout
 from io import StringIO
 from unittest.mock import patch
+from types import SimpleNamespace
 
 from lab.guest_storage_gate import (
     GuestStorageGateError,
@@ -116,6 +117,29 @@ class GuestStorageGateTests(unittest.TestCase):
             sample["devices"][0][field] = value
             with self.subTest(field=field), self.assertRaises(GuestStorageGateError):
                 validate_lab_primary(sample)
+
+    @patch("pathlib.Path.iterdir", return_value=[])
+    @patch("pathlib.Path.read_text", return_value="Filename Type Size Used Priority\\n")
+    @patch("subprocess.run")
+    def test_live_observer_normalizes_lsblk_and_reads_sysfs(self, run, read_text, iterdir):
+        import json
+        from lab.guest_storage_gate import observe_guest_storage
+        payload = {"blockdevices": [
+            {"path": "/dev/vda", "type": "disk", "serial": "AEGIS-LAB-PRIMARY",
+             "size": PRIMARY_BYTES, "ro": False, "rm": False,
+             "mountpoints": [None], "maj:min": "252:0", "children": []},
+            {"path": "/dev/vdb", "type": "disk", "serial": "AEGIS-LAB-SECONDARY",
+             "size": SECONDARY_BYTES, "ro": True, "rm": False,
+             "mountpoints": [None], "maj:min": "252:1", "children": []},
+        ]}
+        run.return_value = SimpleNamespace(stdout=json.dumps(payload))
+        observed = observe_guest_storage()
+        self.assertEqual(observed["devices"][0]["mountpoints"], [])
+        self.assertEqual(observed["devices"][0]["holders"], [])
+        self.assertFalse(observed["devices"][0]["active_swap"])
+        self.assertEqual(validate_lab_primary(observed)["target"]["serial"], "AEGIS-LAB-PRIMARY")
+        run.assert_called_once()
+        iterdir.assert_called()
 
     @patch("lab.guest_storage_gate.observe_guest_storage", return_value=fixture())
     def test_preflight_cli_reports_eligibility_without_authorizing_writes(self, probe):
