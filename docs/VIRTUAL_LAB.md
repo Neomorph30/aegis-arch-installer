@@ -1,6 +1,6 @@
 # Layer 02 — disposable UEFI virtual-machine laboratory
 
-**Scope:** a developer-only, deliberately restricted QEMU environment with synthetic disks and a software TPM. It does **not** install Arch, enroll TPM keys, prove an Arch boot, test LUKS recovery or authorize access to physical devices.
+**Scope:** a developer-only, deliberately restricted QEMU environment with synthetic disks and a software TPM. The ordinary launch smoke test does **not** prove an Arch boot. A separate CI workflow now verifies the official ISO checksum and detects the Arch live root prompt in a disposable VM. Neither workflow installs Arch, enrolls TPM keys, tests LUKS recovery or authorizes access to physical devices.
 
 ## Requirements
 
@@ -53,11 +53,11 @@ python tools/security_lint.py
 python -m unittest discover -s tests -v
 ```
 
-Tests exercise missing dependencies, wrong firmware combinations, rejected device/symlink inputs, refused pre-existing disk files, private workspace permissions, size bounds, explicit network isolation, attempts to substitute `/dev/sda`, QMP TPM-absence detection and cleanup logic. GitHub Actions also attempts a **real disposable QEMU/OVMF/swtpm launch** on an ephemeral runner.
+Tests exercise missing dependencies, wrong firmware combinations, rejected device/symlink inputs, refused pre-existing disk files, private workspace permissions, size bounds, explicit network isolation, attempts to substitute `/dev/sda`, QMP TPM-absence detection and cleanup logic. GitHub Actions runs a **disposable QEMU/OVMF/swtpm launch** on an ephemeral runner, and a separate workflow verifies an actual Arch live-environment boot.
 
 ## Remaining work
 
-Layer 06 will design the privileged *guest installer* (not part of this lab); Layer 07 will boot a minimal encrypted Arch guest; Layer 08 will demonstrate offline recovery, key/header backup and deliberate failures. This lab is a testing foundation, not evidence those later acceptance tests passed.
+The Arch live environment now boots in CI, but the guest storage preflight still needs to be executed inside that environment. Layer 06 will design the privileged *guest installer* (not part of this lab); Layer 07 will boot a minimal encrypted Arch guest; Layer 08 will demonstrate offline recovery, key/header backup and deliberate failures. This lab is a testing foundation, not evidence those later acceptance tests passed.
 See [Virtual Write Authorization Gates](VIRTUAL_WRITE_AUTHORIZATION.md) for the
 required review, consent, identity and recovery conditions before any guest-side
 disk writer may be enabled. The current guest storage gate is preflight-only.
