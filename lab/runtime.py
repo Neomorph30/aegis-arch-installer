@@ -194,7 +194,7 @@ def command_lines(
            "--ctrl", f"type=unixio,path={prepared['tpm_sock']}", "--flags", "startup-clear"]
     qemu = [QEMU, "-no-user-config", "-nodefaults", "-machine", "q35,accel=tcg",
             "-cpu", "max", "-m", str(config.ram_mib), "-smp", str(config.cpus),
-            "-display", "vnc=127.0.0.1:0" if (observe_boot or observe_live) else ("gtk" if interactive else "none"),
+            "-display", "vnc=127.0.0.1:0" if observe_boot else ("gtk" if interactive else "none"),
             "-monitor", "none", "-serial", "none",
             "-nic", "none" if network_mode == "disabled" else "user,model=virtio-net-pci",
             "-device", "VGA",
