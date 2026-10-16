@@ -362,7 +362,7 @@ def launch(
         raise LabError("Guest preflight observation requires a separate read-only payload ISO")
     if payload_iso is not None and not observe_guest_preflight:
         raise LabError("A guest payload is accepted only for explicit guest-preflight observation")
-    if (observe_boot or observe_live) and shutil.which("tesseract") is None:
+    if (observe_boot or observe_live or observe_guest_preflight) and shutil.which("tesseract") is None:
         raise LabError("Boot observation requires Tesseract OCR; no boot claim will be made")
     if isinstance(live_timeout_seconds, bool) or not isinstance(live_timeout_seconds, int) or not 30 <= live_timeout_seconds <= 240:
         raise LabError("Live boot timeout must be an integer from 30 to 240 seconds")
