@@ -131,7 +131,7 @@ def observe_guest_storage() -> dict[str, Any]:
     from pathlib import Path
 
     command = [
-        "lsblk", "--json", "--bytes", "--paths",
+        "lsblk", "--json", "--bytes", "--paths", "--tree",
         "--output", "PATH,TYPE,SERIAL,SIZE,RO,RM,MOUNTPOINTS,MAJ:MIN,CHILDREN",
     ]
     try:
