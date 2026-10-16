@@ -372,7 +372,12 @@ def launch(
                                     check=True, capture_output=True, text=True, timeout=10,
                                 ).stdout
                             except (OSError, subprocess.SubprocessError) as exc:
-                                raise LabError("Live-environment screenshot OCR failed; boot remains unverified") from exc
+                                detail = getattr(exc, "stderr", None)
+                                if isinstance(detail, bytes):
+                                    detail = detail.decode("utf-8", errors="replace")
+                                detail = " ".join(str(detail or "").split())[:240]
+                                suffix = f": {detail}" if detail else f" ({type(exc).__name__})"
+                                raise LabError("Live-environment screenshot OCR failed" + suffix + "; boot remains unverified") from exc
                             normalized_ocr = " ".join(ocr.casefold().split())
                             if "archiso" in normalized_ocr and "root" in normalized_ocr:
                                 live_detected = True
