@@ -48,7 +48,7 @@ class GuestInstallSpecTests(unittest.TestCase):
 
     def test_duplicate_kernel_device_identity_is_rejected(self):
         obs = observation()
-        obs["devices"][1]["major_minor"] = "0252:000"
+        obs["devices"][1]["major_minor"] = obs["devices"][0]["major_minor"]
         with self.assertRaisesRegex(InstallSpecError, "Duplicate kernel major/minor identity"):
             build_guest_install_spec(obs)
 
