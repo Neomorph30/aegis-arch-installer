@@ -10,11 +10,19 @@ from unittest.mock import patch
 
 from aegis import hardware
 from aegis.cli import _load_json, _write_json
+from tools.security_lint import check_source
 
 ROOT = Path(__file__).resolve().parent.parent
 
 
 class GuardrailTests(unittest.TestCase):
+    def test_lab_subprocess_allowlist_is_path_specific(self):
+        safe = "import subprocess\\nsubprocess.run(['qemu-system-x86_64'], check=True)\\n"
+        self.assertEqual(check_source(safe, "lab/runtime.py"), [])
+        violations = check_source(safe, "lab/unreviewed_executor.py")
+        self.assertTrue(any("subprocess import not allowlisted" in item for item in violations))
+        self.assertTrue(any("subprocess call subprocess.run not allowlisted" in item for item in violations))
+
     def test_no_disk_mutation_interface(self):
         import aegis
         self.assertFalse(hasattr(aegis, "install"))
