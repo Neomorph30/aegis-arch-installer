@@ -83,6 +83,20 @@ def build_guest_install_spec(observation: dict[str, Any]) -> dict[str, Any]:
     unexpected = [d for d in raw if d.get("type") not in {"disk", "rom", "loop"}]
     if unexpected:
         raise InstallSpecError("Unexpected block-device root type is present")
+
+    kernel_identities: set[tuple[int, int]] = set()
+    for root in raw:
+        for node in _walk(root):
+            identity_text = node.get("major_minor")
+            if not isinstance(identity_text, str) or identity_text.count(":") != 1:
+                raise InstallSpecError("Kernel major/minor identity is missing or malformed")
+            major_text, minor_text = identity_text.split(":", 1)
+            if not major_text.isdecimal() or not minor_text.isdecimal():
+                raise InstallSpecError("Kernel major/minor identity is missing or malformed")
+            identity = (int(major_text), int(minor_text))
+            if identity in kernel_identities:
+                raise InstallSpecError("Duplicate kernel major/minor identity; device paths may alias")
+            kernel_identities.add(identity)
     disks = [d for d in raw if d.get("type") == "disk"]
     roms = [d for d in raw if d.get("type") == "rom"]
     if len(disks) != 2:
@@ -136,7 +150,16 @@ def build_guest_install_spec(observation: dict[str, Any]) -> dict[str, Any]:
             "path": PRIMARY_PATH,
             "serial": PRIMARY_SERIAL,
             "size_bytes": size,
+            "major_minor": primary["major_minor"],
             "secondary_policy": "PRESERVE",
+        },
+        "secondary_device": {
+            "path": SECONDARY_PATH,
+            "serial": SECONDARY_SERIAL,
+            "size_bytes": secondary_size,
+            "major_minor": secondary["major_minor"],
+            "read_only": True,
+            "policy": "PRESERVE",
         },
         "layout": [
             {"label": "AEGIS_EFI", "size_bytes": EFI_BYTES, "filesystem": "FAT32",
