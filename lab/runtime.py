@@ -83,6 +83,7 @@ def dependencies() -> dict[str, object]:
     return {
         "qemu_present": shutil.which(QEMU) is not None,
         "swtpm_present": shutil.which(SWTPM) is not None,
+        "xorriso_present": shutil.which("xorriso") is not None,
         "ovmf_pair_present": firmware is not None,
         "ovmf_code": str(firmware[0]) if firmware else None,
         "ovmf_vars_template": str(firmware[1]) if firmware else None,
@@ -134,7 +135,7 @@ def _copy_regular_file(src: Path, dst: Path, *, max_bytes: int) -> int:
         os.close(fd)
 
 
-def prepare_workspace(workspace: Path, config: LabConfig, firmware: tuple[Path, Path], iso: Path | None, *, iso_sha256: str | None = None, payload_iso: Path | None = None) -> dict[str, Path]:
+def prepare_workspace(workspace: Path, config: LabConfig, firmware: tuple[Path, Path], iso: Path | None, *, iso_sha256: str | None = None, include_guest_payload: bool = False) -> dict[str, Path]:
     """Only call inside private TemporaryDirectory created by this process."""
     config.validate()
     if not workspace.is_dir() or workspace.is_symlink() or (workspace.stat().st_mode & 0o077):
@@ -143,8 +144,10 @@ def prepare_workspace(workspace: Path, config: LabConfig, firmware: tuple[Path, 
         raise LabError("An ISO requires an independently supplied --iso-sha256 digest")
     if iso is None and iso_sha256 is not None:
         raise LabError("An ISO digest was supplied without an ISO path")
-    if payload_iso is not None and iso is None:
+    if include_guest_payload and iso is None:
         raise LabError("A guest preflight payload requires the verified Arch ISO")
+    if include_guest_payload and shutil.which("xorriso") is None:
+        raise LabError("xorriso is required to build the trusted guest preflight payload")
     p = workspace / "primary.raw"
     s = workspace / "secondary.raw"
     _exclusive_sparse_file(p, config.primary_bytes)
@@ -164,9 +167,26 @@ def prepare_workspace(workspace: Path, config: LabConfig, firmware: tuple[Path, 
         except ISOValidationError as exc:
             raise LabError(f"Installer ISO verification failed: {exc}") from exc
         result["iso"] = dst
-    if payload_iso is not None:
+    if include_guest_payload:
+        # Build the helper medium from this checkout's reviewed source. Never
+        # execute a caller-supplied ISO whose script could forge the success marker.
+        source = Path(__file__).with_name("guest_storage_gate.py")
+        if not _regular_nonlink(source):
+            raise LabError("Reviewed guest storage gate source is unavailable")
+        payload_dir = workspace / "guest-payload"
+        payload_dir.mkdir(mode=0o700)
+        payload_script = payload_dir / "gate.py"
+        _copy_regular_file(source, payload_script, max_bytes=256 * 1024)
         payload_dst = workspace / "guest-preflight.iso"
-        _copy_regular_file(payload_iso, payload_dst, max_bytes=32 * 1024 * 1024)
+        try:
+            subprocess.run(
+                ["xorriso", "-as", "mkisofs", "-quiet", "-o", str(payload_dst), str(payload_dir)],
+                check=True, capture_output=True, text=True, timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise LabError("Unable to build the trusted guest preflight payload") from exc
+        if not _regular_nonlink(payload_dst) or payload_dst.stat().st_size <= 0:
+            raise LabError("Built guest preflight payload is not a regular non-empty ISO")
         result["payload_iso"] = payload_dst
     return result
 
@@ -527,7 +547,6 @@ def launch(
     iso: Path | None = None,
     *,
     iso_sha256: str | None = None,
-    payload_iso: Path | None = None,
     smoke: bool = True,
     network_mode: str = "disabled",
     observe_boot: bool = False,
@@ -542,10 +561,8 @@ def launch(
         raise LabError("Unsupported network mode; choose disabled or explicit user-mode NAT")
     if (observe_boot or observe_live or observe_guest_preflight) and iso is None:
         raise LabError("Boot observation requires a verified Arch ISO")
-    if observe_guest_preflight and payload_iso is None:
-        raise LabError("Guest preflight observation requires a separate read-only payload ISO")
-    if payload_iso is not None and not observe_guest_preflight:
-        raise LabError("A guest payload is accepted only for explicit guest-preflight observation")
+    if observe_guest_preflight and shutil.which("xorriso") is None:
+        raise LabError("Guest preflight requires xorriso to build its trusted helper ISO")
     if (observe_boot or observe_live or observe_guest_preflight) and shutil.which("tesseract") is None:
         raise LabError("Boot observation requires Tesseract OCR; no boot claim will be made")
     if isinstance(live_timeout_seconds, bool) or not isinstance(live_timeout_seconds, int) or not 30 <= live_timeout_seconds <= 480:
@@ -563,7 +580,7 @@ def launch(
     with tempfile.TemporaryDirectory(prefix="aegis-lab-", dir="/tmp") as work:
         folder = Path(work)
         paths = prepare_workspace(folder, config, firmware, iso, iso_sha256=iso_sha256,
-                                  payload_iso=payload_iso)
+                                  include_guest_payload=observe_guest_preflight)
         tpm_args, vm_args = command_lines(config, firmware, paths, interactive=not smoke,
                                            network_mode=network_mode,
                                            observe_boot=(observe_boot or observe_live or observe_guest_preflight),
@@ -827,8 +844,6 @@ def main(argv: list[str] | None = None) -> int:
                         help="wait for an Arch live-environment root prompt using screenshot OCR (requires verified ISO)")
     parser.add_argument("--observe-guest-preflight", action="store_true",
                         help="run the read-only storage gate inside Arch from a separate read-only payload ISO")
-    parser.add_argument("--guest-preflight-payload", type=Path,
-                        help="separately prepared ISO containing guest_storage_gate.py as gate.py")
     parser.add_argument("--live-timeout-seconds", type=int, default=120,
                         help="live environment observation timeout (30–480 seconds)")
     parser.add_argument("--iso", type=Path, help="optional local Arch ISO to verify and copy into private lab")
@@ -846,11 +861,8 @@ def main(argv: list[str] | None = None) -> int:
     if sum((args.observe_boot, args.observe_live, args.observe_guest_preflight)) > 1:
         print("AEGIS lab refused: choose only one boot observation mode.", file=sys.stderr)
         return 2
-    if args.observe_guest_preflight and args.guest_preflight_payload is None:
-        print("AEGIS lab refused: guest preflight requires --guest-preflight-payload.", file=sys.stderr)
-        return 2
-    if args.guest_preflight_payload is not None and not args.observe_guest_preflight:
-        print("AEGIS lab refused: payload requires --observe-guest-preflight.", file=sys.stderr)
+    if args.observe_guest_preflight and (args.iso is None or args.iso_sha256 is None):
+        print("AEGIS lab refused: guest preflight requires --iso and --iso-sha256.", file=sys.stderr)
         return 2
     if args.check:
         print(json.dumps(dependencies(), indent=2, sort_keys=True))
@@ -863,7 +875,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         result = launch(LabConfig(ram_mib=args.ram_mib, cpus=args.cpus, seconds=args.seconds),
-                        args.iso, iso_sha256=args.iso_sha256, payload_iso=args.guest_preflight_payload,
+                        args.iso, iso_sha256=args.iso_sha256,
                         smoke=args.smoke, network_mode=args.network_mode, observe_boot=args.observe_boot,
                         observe_live=args.observe_live, observe_guest_preflight=args.observe_guest_preflight,
                         live_timeout_seconds=args.live_timeout_seconds)
