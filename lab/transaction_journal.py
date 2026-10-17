@@ -257,9 +257,14 @@ class TransactionJournal:
             event["event_hash"] = _event_hash(event)
             _validate_event(event, len(events) + 1, previous)
             line = _canonical(event) + b"\n"
+            if info.st_size + len(line) > MAX_JOURNAL_BYTES:
+                raise JournalError("Appending would exceed the supported journal evidence size; preserve it for offline review")
             written = 0
             while written < len(line):
-                written += os.write(fd, line[written:])
+                count = os.write(fd, line[written:])
+                if count <= 0:
+                    raise JournalError("Journal append made no progress; preserve existing evidence")
+                written += count
             os.fsync(fd)
             if created:
                 # Persist the new directory entry as well as the journal contents.
