@@ -19,13 +19,13 @@ def observation():
         "network_mode": "disabled",
         "active_swaps": [],
         "devices": [
-            {"path": "/dev/vda", "type": "disk", "serial": "AEGIS-LAB-PRIMARY",
+            {"path": "/dev/vda", "major_minor": "252:0", "type": "disk", "serial": "AEGIS-LAB-PRIMARY",
              "size_bytes": 24 * 1024**3, "read_only": False, "mountpoints": [],
              "holders": [], "active_swap": False, "children": []},
-            {"path": "/dev/vdb", "type": "disk", "serial": "AEGIS-LAB-SECONDARY",
+            {"path": "/dev/vdb", "major_minor": "252:16", "type": "disk", "serial": "AEGIS-LAB-SECONDARY",
              "size_bytes": 8 * 1024**3, "read_only": True, "mountpoints": [],
              "holders": [], "active_swap": False, "children": []},
-            {"path": "/dev/sr0", "type": "rom", "read_only": True},
+            {"path": "/dev/sr0", "major_minor": "11:0", "type": "rom", "read_only": True, "children": []},
         ],
     }
 
@@ -45,6 +45,18 @@ class GuestInstallSpecTests(unittest.TestCase):
         spec = build_guest_install_spec(observation())
         spec["target"]["path"] = "/dev/vdb"
         self.assertFalse(verify_guest_install_spec(spec))
+
+    def test_duplicate_kernel_device_identity_is_rejected(self):
+        obs = observation()
+        obs["devices"][1]["major_minor"] = "0252:000"
+        with self.assertRaisesRegex(InstallSpecError, "Duplicate kernel major/minor identity"):
+            build_guest_install_spec(obs)
+
+    def test_missing_kernel_device_identity_is_rejected(self):
+        obs = observation()
+        obs["devices"][0].pop("major_minor")
+        with self.assertRaisesRegex(InstallSpecError, "Kernel major/minor identity"):
+            build_guest_install_spec(obs)
 
     def test_non_qemu_environment_rejected(self):
         obs = observation()
@@ -76,7 +88,7 @@ class GuestInstallSpecTests(unittest.TestCase):
     def test_mounted_child_rejected(self):
         obs = observation()
         obs["devices"][0]["children"] = [
-            {"path": "/dev/vda1", "type": "part", "mountpoints": ["/mnt/host-data"], "children": []}
+            {"path": "/dev/vda1", "major_minor": "252:1", "type": "part", "mountpoints": ["/mnt/host-data"], "children": []}
         ]
         with self.assertRaisesRegex(InstallSpecError, "partition"):
             build_guest_install_spec(obs)
