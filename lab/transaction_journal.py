@@ -198,8 +198,10 @@ class TransactionJournal:
             info = parent.lstat()
         except OSError as exc:
             raise JournalError("Journal directory must already exist") from exc
-        if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode) or stat.S_IMODE(info.st_mode) & 0o077:
-            raise JournalError("Journal directory must be a private non-symlink directory")
+        if (not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode)
+                or stat.S_IMODE(info.st_mode) & 0o077 or not (info.st_mode & stat.S_IXUSR)
+                or info.st_uid != os.geteuid()):
+            raise JournalError("Journal directory must be owned by the current user and private, searchable, and non-symlink")
 
     def append(
         self,
