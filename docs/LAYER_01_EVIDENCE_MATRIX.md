@@ -33,9 +33,9 @@
 - [x] Threat model, risk register, support matrix, quality standards and release gates exist.
 - [x] Preview CI runs the static guardrail, unit tests, compilation and CLI smoke checks on Python 3.11–3.13.
 - [x] Current assurance manifest explicitly says installation is disabled and security certification is false.
-- [ ] [ ] Close AEGIS-SEC-006's pre-alpha consent/network-boundary evidence gap; explicit noninteractive --connect fail-closed regression added, awaiting CI.
-- [ ] [ ] Close AEGIS-SEC-011's seeded-secret leakage evidence gap for every report/output path; quoted/PEM canaries and malformed-report CLI tests added, awaiting CI.
-- [ ] [ ] Close AEGIS-SEC-008's structured status contract and JSON/HTML parity tests; malformed/contradictory CLI evidence cases added, awaiting CI.
+- [x] Close AEGIS-SEC-006's noninteractive consent regression test: noninteractive `network --connect` fails closed without launching interactive setup. CI passed on commit `10b9a1eea4cf38840fdf7f1d84115b08181318d2`: https://github.com/Neomorph30/aegis-arch-installer/actions/runs/39014787332. Broader independent network-boundary review remains open.
+- [x] Added quoted credential and multiline PEM canaries to public JSON/HTML and CLI report tests; malformed-report CLI tests also pass on commit `10b9a1eea4cf38840fdf7f1d84115b08181318d2`: https://github.com/Neomorph30/aegis-arch-installer/actions/runs/39014787332. Full secret-leakage coverage across every output/error path remains open.
+- [x] Malformed/contradictory CLI evidence cases and report-output refusal tests passed on commit `10b9a1eea4cf38840fdf7f1d84115b08181318d2`: https://github.com/Neomorph30/aegis-arch-installer/actions/runs/39014787332. A unified installed-system status contract remains open.
 - [x] Reconcile the current report/secret-handling evidence links with the passing preview regression run; this does not close the remaining coverage gaps.
 - [ ] Obtain independent technical review of the code, threat model and guardrails before any privileged executor is introduced.
 
