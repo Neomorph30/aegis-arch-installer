@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 from typing import Any, Callable
 
-LSBLK_FIELDS = "NAME,PATH,TYPE,SIZE,SERIAL,RO,MOUNTPOINTS,PKNAME,PARTTYPE,PARTLABEL"
+LSBLK_FIELDS = "NAME,PATH,TYPE,SIZE,SERIAL,RO,MOUNTPOINTS,PKNAME,PARTTYPE,PARTLABEL,MAJ:MIN"
 
 
 class GuestProbeError(RuntimeError):
@@ -53,6 +53,16 @@ def _normalize(node: Any, sys_root: Path, swaps: set[str]) -> dict[str, Any]:
     if not isinstance(path, str) or not path.startswith("/dev/"):
         raise GuestProbeError("Device node has no valid path; refresh discovery")
     name = path.removeprefix("/dev/")
+    raw_major_minor = node.get("maj:min")
+    if not isinstance(raw_major_minor, str) or raw_major_minor.count(":") != 1:
+        raise GuestProbeError("Device node has no valid kernel major/minor identity; refresh discovery")
+    try:
+        major_text, minor_text = raw_major_minor.split(":", 1)
+        if not major_text.isdecimal() or not minor_text.isdecimal():
+            raise ValueError("non-decimal identity")
+        major_minor = f"{int(major_text)}:{int(minor_text)}"
+    except ValueError as exc:
+        raise GuestProbeError("Device node has malformed kernel major/minor identity") from exc
     size = node.get("size")
     if size is not None and (isinstance(size, bool) or not isinstance(size, int)):
         raise GuestProbeError("Device size is malformed")
@@ -67,6 +77,7 @@ def _normalize(node: Any, sys_root: Path, swaps: set[str]) -> dict[str, Any]:
         holders = ["UNVERIFIED"]
     normalized = {
         "path": path,
+        "major_minor": major_minor,
         "type": node.get("type"),
         "serial": node.get("serial"),
         "size_bytes": size,
