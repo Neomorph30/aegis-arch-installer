@@ -83,6 +83,16 @@ class GuestStorageGateTests(unittest.TestCase):
         with self.assertRaisesRegex(GuestStorageGateError, "Removable secondary"):
             validate_lab_primary(sample)
 
+    def test_lab_disk_paths_must_match_fixed_guest_contract(self):
+        sample = fixture()
+        sample["devices"][0]["path"] = "/dev/sda"
+        with self.assertRaisesRegex(GuestStorageGateError, "fixed /dev/vda primary"):
+            validate_lab_primary(sample)
+        sample = fixture()
+        sample["devices"][1]["path"] = "/dev/sdb"
+        with self.assertRaisesRegex(GuestStorageGateError, "fixed /dev/vda primary"):
+            validate_lab_primary(sample)
+
     def test_primary_identity_and_capacity_are_exact(self):
         for key, value in (("serial", "OTHER"), ("size", PRIMARY_BYTES - 1)):
             sample = fixture()
