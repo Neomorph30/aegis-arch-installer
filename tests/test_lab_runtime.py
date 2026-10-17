@@ -103,6 +103,12 @@ class GuestPreflightLauncherTests(unittest.TestCase):
         self.assertIsNone(_arch_live_root_prompt_line(banner))
         self.assertEqual(_arch_live_root_prompt_line("root@archiso ~ #"), "root@archiso ~ #")
 
+    def test_guest_preflight_stops_if_helper_iso_mount_fails(self):
+        from lab.runtime import GUEST_PREFLIGHT_COMMAND
+
+        self.assertIn("mount /dev/sr1 /mnt && python /mnt/gate.py", GUEST_PREFLIGHT_COMMAND)
+        self.assertNotIn("; python", GUEST_PREFLIGHT_COMMAND)
+
     def test_qmp_typing_refuses_uppercase_and_unapproved_characters_before_connecting(self):
         for command in ("echo OK", "python /tmp/a.py", "echo $HOME", ""):
             with self.subTest(command=command), self.assertRaises(LabError):
