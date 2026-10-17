@@ -351,6 +351,46 @@ class StorageAndProbeTests(unittest.TestCase):
         with self.assertRaises(OSError):
             _sysfs_block_node("/tmp/not-a-device")
 
+    def test_live_assessment_normalizes_real_lsblk_leaf_nodes(self):
+        from aegis.inventory import assess_inventory
+
+        root = {
+            "path": "/dev/vda", "type": "disk", "serial": "SERIAL-A", "wwn": "WWN-A",
+            "mountpoints": [None],
+            # lsblk omits children on a real leaf disk.
+        }
+
+        def enrich(node, _swap):
+            node["holders"] = []
+            node["active_swap"] = False
+            node["ambiguous"] = False
+
+        with patch("aegis.hardware.read_disks", return_value=[root]), \
+             patch("aegis.hardware._active_swap_devices", return_value=set()), \
+             patch("aegis.hardware._enrich_block_node", side_effect=enrich):
+            observation = read_assessment_observation()
+
+        self.assertEqual(observation["devices"][0]["children"], [])
+        result = assess_inventory(observation)
+        self.assertEqual(result["status"], "review_required")
+        self.assertFalse(result["write_authorized"])
+
+    def test_live_assessment_preserves_explicitly_malformed_children(self):
+        root = {
+            "path": "/dev/vda", "type": "disk", "serial": "SERIAL-A", "wwn": "WWN-A",
+            "mountpoints": [None], "children": {"unexpected": "mapping"},
+        }
+
+        with patch("aegis.hardware.read_disks", return_value=[root]), \
+             patch("aegis.hardware._active_swap_devices", return_value=set()), \
+             patch("aegis.hardware._enrich_block_node") as enrich:
+            observation = read_assessment_observation()
+
+        self.assertEqual(observation["devices"][0]["children"], {"unexpected": "mapping"})
+        enrich.assert_called_once()
+        from aegis.inventory import assess_inventory
+        self.assertEqual(assess_inventory(observation)["status"], "blocked")
+
     def test_live_assessment_fails_closed_on_excessive_topology(self):
         root = {"path": "/dev/vda", "type": "disk", "children": []}
         cursor = root
