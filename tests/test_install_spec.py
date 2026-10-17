@@ -80,7 +80,7 @@ class GuestInstallSpecTests(unittest.TestCase):
     def test_extra_disk_rejected(self):
         obs = observation()
         extra = copy.deepcopy(obs["devices"][0])
-        extra.update(path="/dev/vdc", serial="UNEXPECTED")
+        extra.update(path="/dev/vdc", major_minor="252:32", serial="UNEXPECTED")
         obs["devices"].append(extra)
         with self.assertRaisesRegex(InstallSpecError, "exactly two lab disks"):
             build_guest_install_spec(obs)
