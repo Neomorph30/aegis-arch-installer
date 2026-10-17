@@ -306,7 +306,7 @@ def query_qmp(path: Path, screenshot_path: Path | None = None) -> dict[str, obje
             return result
 
 
-GUEST_PREFLIGHT_COMMAND = "mount /dev/sr1 /mnt; python /mnt/gate.py --preflight --marker"
+GUEST_PREFLIGHT_COMMAND = "mount /dev/sr1 /mnt && python /mnt/gate.py --preflight --marker"
 
 
 def _arch_live_root_prompt_line(ocr: str) -> str | None:
@@ -414,7 +414,7 @@ def type_qmp_command(path: Path, command: str) -> None:
     if command != GUEST_PREFLIGHT_COMMAND:
         raise LabError("Only the fixed read-only guest preflight command may be typed")
     qcodes = {
-        " ": "spc", "/": "slash", ".": "dot", "-": "minus", ";": "semicolon",
+        " ": "spc", "/": "slash", ".": "dot", "-": "minus", ";": "semicolon", "&": "shift-7",
     }
     if not command or any(
         not (char.isascii() and (char.islower() or char.isdigit() or char in qcodes))
