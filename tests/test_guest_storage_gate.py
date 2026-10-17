@@ -184,6 +184,27 @@ class GuestStorageGateTests(unittest.TestCase):
         self.assertNotIn("CHILDREN", lsblk_command[lsblk_command.index("--output") + 1])
         iterdir.assert_called()
 
+    @patch("pathlib.Path.read_text", return_value="Filename Type Size Used Priority\\n")
+    @patch("subprocess.run")
+    def test_live_observer_rejects_deep_or_oversized_raw_tree_before_enrichment(self, run, _swaps):
+        import json
+        from lab.guest_storage_gate import observe_guest_storage
+
+        deep = {"serial": "S0"}
+        cursor = deep
+        for index in range(18):
+            child = {"serial": f"S{index + 1}"}
+            cursor["children"] = [child]
+            cursor = child
+        run.return_value = SimpleNamespace(stdout=json.dumps({"blockdevices": [deep]}))
+        with self.assertRaisesRegex(GuestStorageGateError, "safety limits"):
+            observe_guest_storage()
+
+        oversized = [{"serial": f"S{i}"} for i in range(4097)]
+        run.return_value = SimpleNamespace(stdout=json.dumps({"blockdevices": oversized}))
+        with self.assertRaisesRegex(GuestStorageGateError, "safety limits"):
+            observe_guest_storage()
+
     @patch("lab.guest_storage_gate.observe_guest_storage", return_value=fixture())
     def test_preflight_cli_reports_eligibility_without_authorizing_writes(self, probe):
         from lab.guest_storage_gate import main
