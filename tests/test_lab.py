@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 import os
 import stat
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -46,6 +47,7 @@ class ConfigTests(unittest.TestCase):
             vars.unlink()
             self.assertIsNone(find_firmware([(str(code), str(vars))]))
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Requires Linux workspace permissions or symlink semantics")
     def test_firmware_symlink_rejected(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d)
@@ -66,6 +68,7 @@ class WorkspaceTests(unittest.TestCase):
         v.write_bytes(b'VARS')
         return c, v
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Requires Linux workspace permissions or symlink semantics")
     def test_preparation_sparse_private_files_and_tpm_dir(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
@@ -104,6 +107,7 @@ class WorkspaceTests(unittest.TestCase):
             self.assertIn('-nic none', observed)
             self.assertNotIn('hostfwd=', observed)
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Requires Linux workspace permissions or symlink semantics")
     def test_explicit_user_nat_is_opt_in_and_has_no_port_forwarding(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
@@ -118,6 +122,7 @@ class WorkspaceTests(unittest.TestCase):
             self.assertNotIn('hostfwd=', joined)
             self.assertNotIn('-nic none', joined)
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Requires Linux workspace permissions or symlink semantics")
     def test_unknown_network_mode_fails_closed(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
@@ -129,6 +134,7 @@ class WorkspaceTests(unittest.TestCase):
                 command_lines(LabConfig(primary_bytes=GIB, secondary_bytes=GIB), fw, output,
                               network_mode='bridged')
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Requires Linux workspace permissions or symlink semantics")
     def test_private_workspace_required(self):
         with tempfile.TemporaryDirectory() as d:
             folder = Path(d) / 'world-readable'
@@ -137,6 +143,7 @@ class WorkspaceTests(unittest.TestCase):
             with self.assertRaisesRegex(LabError, 'non-private'):
                 prepare_workspace(folder, LabConfig(), fw, None)
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Requires Linux workspace permissions or symlink semantics")
     def test_symlink_workspace_rejected(self):
         with tempfile.TemporaryDirectory() as d:
             good = Path(d) / 'good'
@@ -147,6 +154,7 @@ class WorkspaceTests(unittest.TestCase):
             with self.assertRaises(LabError):
                 prepare_workspace(link, LabConfig(), fw, None)
 
+    @unittest.skipUnless(sys.platform.startswith("linux") and hasattr(os, "O_NOFOLLOW"), "Requires Linux O_NOFOLLOW and symlink semantics")
     def test_existing_disk_never_overwritten(self):
         with tempfile.TemporaryDirectory() as d:
             dest = Path(d) / 'primary.raw'
@@ -155,6 +163,7 @@ class WorkspaceTests(unittest.TestCase):
                 _exclusive_sparse_file(dest, GIB)
             self.assertEqual(dest.read_text(), 'no overwrite')
 
+    @unittest.skipUnless(sys.platform.startswith("linux") and hasattr(os, "O_NOFOLLOW"), "Requires Linux O_NOFOLLOW and symlink semantics")
     def test_block_device_and_symlink_input_rejected(self):
         with tempfile.TemporaryDirectory() as d:
             dst = Path(d) / 'out'
@@ -168,6 +177,7 @@ class WorkspaceTests(unittest.TestCase):
                 _copy_regular_file(link, dst, max_bytes=100)
             self.assertFalse(dst.exists())
 
+    @unittest.skipUnless(sys.platform.startswith("linux") and hasattr(os, "O_NOFOLLOW"), "Requires Linux O_NOFOLLOW and symlink semantics")
     def test_iso_copy_and_size_limit(self):
         with tempfile.TemporaryDirectory() as d:
             source = Path(d) / 'example.iso'
@@ -179,6 +189,7 @@ class WorkspaceTests(unittest.TestCase):
             self.assertEqual(dst.read_bytes(), b'fake data')
             self.assertEqual(dst.stat().st_mode & 0o777, 0o600)
 
+    @unittest.skipUnless(sys.platform.startswith("linux") and hasattr(os, "O_NOFOLLOW"), "Requires Linux O_NOFOLLOW and symlink semantics")
     def test_preexisting_symlink_cannot_be_replaced(self):
         with tempfile.TemporaryDirectory() as d:
             protected = Path(d) / 'target'
@@ -189,6 +200,7 @@ class WorkspaceTests(unittest.TestCase):
                 _exclusive_sparse_file(alias, GIB)
             self.assertEqual(protected.read_bytes(), b'preserve')
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Requires Linux workspace permissions or symlink semantics")
     def test_manually_edited_disk_path_rejected(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
@@ -200,6 +212,7 @@ class WorkspaceTests(unittest.TestCase):
             with self.assertRaisesRegex(LabError, 'Unexpected primary path'):
                 command_lines(LabConfig(), fw, output)
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Requires Linux workspace permissions or symlink semantics")
     def test_unsafe_comma_in_directory_rejected(self):
         with tempfile.TemporaryDirectory(prefix='unsafe,') as d:
             root = Path(d)
@@ -221,10 +234,12 @@ class CLITests(unittest.TestCase):
             main([])
         self.assertEqual(cm.exception.code, 2)
 
+    @unittest.skipUnless(sys.platform.startswith("linux") and hasattr(os, "geteuid"), "Requires Linux effective-user checks")
     def test_root_refused_without_starting_vm(self):
         with patch('lab.runtime.os.geteuid', return_value=0), patch('lab.runtime.subprocess.Popen', side_effect=AssertionError('started!')):
             self.assertEqual(main(['--smoke']), 2)
 
+    @unittest.skipUnless(sys.platform.startswith("linux") and hasattr(os, "geteuid"), "Requires Linux effective-user checks")
     def test_missing_dependencies_refuse(self):
         with patch('lab.runtime.os.geteuid', return_value=1000), patch('lab.runtime.dependencies', return_value={k: False for k in ('qemu_present', 'swtpm_present','ovmf_pair_present')}):
             self.assertEqual(main(['--smoke']), 2)
@@ -256,6 +271,7 @@ if __name__ == '__main__':
     unittest.main()
 
 class QMPTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform.startswith("linux") and hasattr(socket, "AF_UNIX"), "Requires Unix domain sockets")
     def test_status_and_tpm_queries_with_local_mock(self):
         import json
         import socket
@@ -285,6 +301,7 @@ class QMPTests(unittest.TestCase):
             thread.join(timeout=2)
             self.assertEqual(commands, ['qmp_capabilities', 'query-status', 'query-tpm'])
 
+    @unittest.skipUnless(sys.platform.startswith("linux") and hasattr(socket, "AF_UNIX"), "Requires Unix domain sockets")
     def test_missing_tpm_fails_closed(self):
         import json
         import socket
