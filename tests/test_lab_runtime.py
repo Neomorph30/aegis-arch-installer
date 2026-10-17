@@ -109,6 +109,13 @@ class GuestPreflightLauncherTests(unittest.TestCase):
         self.assertIn("mount /dev/sr1 /mnt && python /mnt/gate.py", GUEST_PREFLIGHT_COMMAND)
         self.assertNotIn("; python", GUEST_PREFLIGHT_COMMAND)
 
+    def test_qmp_ampersand_uses_a_shifted_key_chord(self):
+        from lab.runtime import _qmp_keycodes
+
+        self.assertEqual(_qmp_keycodes("&"), ["shift", "7"])
+        self.assertNotIn("shift-7", _qmp_keycodes("&"))
+        self.assertEqual(_qmp_keycodes(";"), ["semicolon"])
+
     def test_qmp_typing_refuses_uppercase_and_unapproved_characters_before_connecting(self):
         for command in ("echo OK", "python /tmp/a.py", "echo $HOME", ""):
             with self.subTest(command=command), self.assertRaises(LabError):
