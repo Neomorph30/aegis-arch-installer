@@ -13,13 +13,13 @@ from lab.guest_probe import GuestProbeError, observe_guest
 
 def lsblk_data():
     return {"blockdevices": [
-        {"name": "vda", "path": "/dev/vda", "type": "disk", "size": 25769803776,
+        {"name": "vda", "path": "/dev/vda", "maj:min": "252:0", "type": "disk", "size": 25769803776,
          "serial": "AEGIS-LAB-PRIMARY", "ro": 0, "mountpoints": [None],
-         "children": [{"name": "vda1", "path": "/dev/vda1", "type": "part",
+         "children": [{"name": "vda1", "path": "/dev/vda1", "maj:min": "252:1", "type": "part",
                        "size": 4294967296, "serial": None, "ro": 0, "mountpoints": [None]}]},
-        {"name": "vdb", "path": "/dev/vdb", "type": "disk", "size": 8589934592,
+        {"name": "vdb", "path": "/dev/vdb", "maj:min": "252:16", "type": "disk", "size": 8589934592,
          "serial": "AEGIS-LAB-SECONDARY", "ro": 1, "mountpoints": [None]},
-        {"name": "sr0", "path": "/dev/sr0", "type": "rom", "size": 0,
+        {"name": "sr0", "path": "/dev/sr0", "maj:min": "11:0", "type": "rom", "size": 0,
          "serial": "ARCH-ISO", "ro": 1, "mountpoints": ["/run/archiso/bootmnt"]},
         {"name": "loop0", "path": "/dev/loop0", "type": "loop", "size": 1000},
     ]}
@@ -61,6 +61,15 @@ class GuestProbeTests(unittest.TestCase):
         self.assertEqual(command[0], "lsblk")
         self.assertFalse(kwargs.get("shell", False))
         self.assertEqual(kwargs["timeout"], 8)
+
+    def test_missing_kernel_device_identity_fails_closed(self):
+        data = lsblk_data()
+        del data["blockdevices"][0]["maj:min"]
+        with self.assertRaisesRegex(GuestProbeError, "kernel major/minor identity"):
+            observe_guest(
+                sys_root=self.sys, proc_root=self.proc,
+                run=lambda *args, **kwargs: SimpleNamespace(stdout=json.dumps(data)),
+            )
 
     def test_active_swap_is_detected(self):
         (self.proc / "swaps").write_text("Filename Type Size Used Priority\n/dev/vda2 partition 1024 0 -2\n")
