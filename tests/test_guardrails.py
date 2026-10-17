@@ -23,6 +23,19 @@ class GuardrailTests(unittest.TestCase):
         self.assertTrue(any("subprocess import not allowlisted" in item for item in violations))
         self.assertTrue(any("subprocess call subprocess.run not allowlisted" in item for item in violations))
 
+    def test_aegis_subprocess_allowlist_rejects_nested_basename_spoofing(self):
+        safe = "import subprocess\\nsubprocess.run(['lsblk'], check=True)\\n"
+        self.assertEqual(check_source(safe, "aegis/hardware.py"), [])
+        self.assertEqual(check_source(safe, "aegis/network.py"), [])
+        for path in ("aegis/nested/hardware.py", "aegis/nested/network.py",
+                     "./aegis/nested/hardware.py", "other/hardware.py"):
+            with self.subTest(path=path):
+                violations = check_source(safe, path)
+                self.assertTrue(any("subprocess import not allowlisted" in item
+                                    for item in violations))
+                self.assertTrue(any("subprocess call subprocess.run not allowlisted" in item
+                                    for item in violations))
+
     def test_no_disk_mutation_interface(self):
         import aegis
         self.assertFalse(hasattr(aegis, "install"))
