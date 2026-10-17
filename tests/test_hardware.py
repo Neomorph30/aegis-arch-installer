@@ -332,6 +332,28 @@ class StorageAndProbeTests(unittest.TestCase):
         self.assertEqual(read_disks()[0]["path"], "/dev/sda")
         self.assertNotIn("shell", run.call_args.kwargs)
 
+    @patch("aegis.hardware.shutil.which", return_value="/usr/bin/lsblk")
+    @patch("aegis.hardware.subprocess.run")
+    def test_read_disks_normalizes_real_leaf_nodes_for_planning(self, run, _which):
+        run.return_value = CompletedProcess([], 0, json.dumps({"blockdevices": [
+            {"path": "/dev/sda", "type": "disk", "children": [
+                {"path": "/dev/sda1", "type": "part"}
+            ]},
+            {"path": "/dev/sdb", "type": "disk"},
+        ]}), "")
+        disks = read_disks()
+        self.assertEqual(disks[0]["children"][0]["children"], [])
+        self.assertEqual(disks[1]["children"], [])
+
+    @patch("aegis.hardware.shutil.which", return_value="/usr/bin/lsblk")
+    @patch("aegis.hardware.subprocess.run")
+    def test_read_disks_preserves_malformed_children_for_fail_closed_validation(self, run, _which):
+        malformed = {"unexpected": "mapping"}
+        run.return_value = CompletedProcess([], 0, json.dumps({"blockdevices": [
+            {"path": "/dev/sda", "type": "disk", "children": malformed},
+        ]}), "")
+        self.assertEqual(read_disks()[0]["children"], malformed)
+
     @patch("aegis.hardware.os.stat")
     def test_sysfs_holder_lookup_uses_kernel_major_minor_not_device_basename(self, stat_call):
         stat_call.return_value = type("BlockStat", (), {
