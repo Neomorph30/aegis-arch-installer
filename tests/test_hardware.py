@@ -87,10 +87,9 @@ MemAvailable:   18230000 kB
     def test_memory_mib_valid(self, _mock_read):
         self.assertEqual(_memory_mib(), 32070)
 
-    @patch("aegis.hardware._read_text", return_value="""MemTotal:       16777216 kb
+    @patch("aegis.hardware._read_text", return_value="""MemTotal:       16777216 kB
 """)
-    def test_memory_mib_ignores_unit_column(self, _mock_read):
-        # Parser reads column index 1 and divides by 1024 without validating the unit token
+    def test_memory_mib_parses_kilobytes(self, _mock_read):
         self.assertEqual(_memory_mib(), 16384)
 
 
