@@ -181,23 +181,27 @@ def observe_guest_storage() -> dict[str, Any]:
             swap_ids.add((os.major(info.st_rdev), os.minor(info.st_rdev)))
 
     serial_counts: dict[str, int] = {}
-    def count_serial(node: Any) -> None:
+    # Inspect raw topology iteratively before any recursive enrichment. Bound both
+    # depth and total nodes so hostile/malformed lsblk JSON cannot exhaust stack or
+    # CPU before the validator gets a chance to reject it.
+    raw_roots = payload["blockdevices"]
+    stack = [(root, 0) for root in reversed(raw_roots)]
+    visited = 0
+    while stack:
+        node, depth = stack.pop()
+        visited += 1
+        if depth > 16 or visited > 4096:
+            raise GuestStorageGateError("Block-device topology exceeds safety limits")
         if not isinstance(node, dict):
             raise GuestStorageGateError("Malformed lsblk child entry")
         serial = node.get("serial")
         if isinstance(serial, str) and serial.strip():
-            serial_counts[serial.strip()] = serial_counts.get(serial.strip(), 0) + 1
-        # lsblk omits the "children" key for leaf devices even with --tree.
-        # Treat an absent key as an empty leaf, but reject an explicitly malformed value.
+            normalized_serial = serial.strip()
+            serial_counts[normalized_serial] = serial_counts.get(normalized_serial, 0) + 1
         children = node.get("children", [])
         if not isinstance(children, list):
             raise GuestStorageGateError("lsblk returned malformed child topology")
-        for child in children:
-            count_serial(child)
-
-    raw_roots = payload["blockdevices"]
-    for root in raw_roots:
-        count_serial(root)
+        stack.extend((child, depth + 1) for child in reversed(children))
     # A booted live ISO commonly exposes its optical drive and one or more
     # loop devices. They are not candidate installation disks. Exclude only
     # these explicit non-disk types; unexpected disks and other root block
