@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 
@@ -43,6 +44,7 @@ class VirtualExecutionBoundaryTests(unittest.TestCase):
         args.update(overrides)
         return simulate_execution(**args)
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Requires Linux directory permissions (mode 0700)")
     def test_records_simulation_without_mutating_image(self):
         before = self.image.read_bytes()
         record = self.run_simulation()
@@ -59,14 +61,17 @@ class VirtualExecutionBoundaryTests(unittest.TestCase):
         with self.assertRaisesRegex(VirtualExecutionError, "digest"):
             self.run_simulation()
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Requires Linux directory permissions (mode 0700)")
     def test_identity_mismatch_is_rejected(self):
         with self.assertRaisesRegex(VirtualExecutionError, "identity"):
             self.run_simulation(approved_identities={"/dev/nvme0n1": {"serial": "WRONG", "wwn": "WRONG"}})
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Requires Linux directory permissions (mode 0700)")
     def test_every_destructive_target_requires_mapping_and_approval(self):
         with self.assertRaisesRegex(VirtualExecutionError, "explicit virtual mapping"):
             self.run_simulation(virtual_targets={}, approved_identities={})
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Requires Linux unprivileged symlink support")
     def test_symlink_target_rejected(self):
         link = self.root / "linked.raw"
         link.symlink_to(self.image)
@@ -77,6 +82,7 @@ class VirtualExecutionBoundaryTests(unittest.TestCase):
         with self.assertRaises(VirtualExecutionError):
             self.run_simulation(virtual_targets={"/dev/nvme0n1": "/dev/null"})
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Requires Linux directory permissions (mode 0700)")
     def test_target_outside_workspace_rejected(self):
         outside = Path(self.temp.name) / "outside.raw"
         outside.write_bytes(b"not in lab workspace")
@@ -84,11 +90,13 @@ class VirtualExecutionBoundaryTests(unittest.TestCase):
         with self.assertRaisesRegex(VirtualExecutionError, "direct children"):
             self.run_simulation(virtual_targets={"/dev/nvme0n1": outside})
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Requires Linux directory permissions (mode 0700)")
     def test_public_workspace_rejected(self):
         self.root.chmod(0o755)
         with self.assertRaisesRegex(VirtualExecutionError, "private directory"):
             self.run_simulation()
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Requires Linux directory permissions (mode 0700)")
     def test_existing_journal_is_never_overwritten(self):
         journal = self.root / "execution-journal.json"
         journal.write_text("preserve evidence")
