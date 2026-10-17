@@ -144,11 +144,12 @@ class GuestPreflightLauncherTests(unittest.TestCase):
     def test_guest_preflight_does_not_accept_caller_supplied_payload(self):
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
-            result = main([
-                "--smoke", "--observe-guest-preflight",
-                "--guest-preflight-payload", "/tmp/untrusted.iso",
-            ])
-        self.assertEqual(result, 2)
+            with self.assertRaises(SystemExit) as raised:
+                main([
+                    "--smoke", "--observe-guest-preflight",
+                    "--guest-preflight-payload", "/tmp/untrusted.iso",
+                ])
+        self.assertEqual(raised.exception.code, 2)
         self.assertIn("unrecognized arguments", stderr.getvalue())
 
     def test_guest_preflight_cannot_be_combined_with_live_only_observation(self):
