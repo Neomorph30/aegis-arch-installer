@@ -59,8 +59,28 @@ def read_disks() -> list[dict[str, Any]]:
         raise HardwareInspectionError("lsblk returned invalid JSON") from exc
     if not isinstance(output, dict) or not isinstance(output.get("blockdevices"), list):
         raise HardwareInspectionError("lsblk returned an unexpected device structure")
-    return [d for d in output["blockdevices"]
-            if isinstance(d, dict) and d.get("type") == "disk"]
+    disks = [d for d in output["blockdevices"]
+             if isinstance(d, dict) and d.get("type") == "disk"]
+    # lsblk's --tree output omits "children" for leaf devices. Normalize that
+    # real-world shape for both inspection/planning and the live assessor, while
+    # preserving explicitly malformed child values so downstream checks block.
+    stack = [(disk, 0) for disk in reversed(disks)]
+    visited = 0
+    while stack:
+        node, depth = stack.pop()
+        visited += 1
+        if depth > 16 or visited > 4096:
+            # Do not silently truncate excessive topology. Any unnormalized
+            # descendants remain incomplete and the safety validators reject them.
+            break
+        if not isinstance(node, dict):
+            continue
+        if "children" not in node:
+            node["children"] = []
+        children = node["children"]
+        if isinstance(children, list):
+            stack.extend((child, depth + 1) for child in reversed(children))
+    return disks
 
 
 def _active_swap_devices() -> set[tuple[int, int]] | None:
