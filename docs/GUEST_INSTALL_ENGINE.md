@@ -18,7 +18,7 @@ The command is read-only and emits JSON with either `VERIFIED_ARCH_ISO` or `BLOC
 
 - Launch from the unprivileged host-side lab. Never run the guest installer directly on the host.
 - The host creates new sparse regular files inside a private temporary workspace and attaches only those files to QEMU.
-- The guest has no host directory sharing, USB passthrough, host block-device paths, or bridged networking. Any future package-download networking must be a separate, explicit lab mode with bounded access and no inbound forwarding.
+- The guest has no host directory sharing, USB passthrough, host block-device paths, or network interface in the baseline preflight lab. The Arch live-boot CI explicitly sets `--network-mode disabled`; no package downloads are needed inside the guest. Any future package-download networking must be a separate, explicit lab mode with bounded access and no inbound forwarding.
 - The primary virtual disk must have a fixed lab-only serial marker and be independently re-identified inside the guest immediately before every destructive phase.
 - The boot ISO must be a regular, non-symlink file with an Arch-labelled ISO9660 primary volume descriptor, and its SHA-256 must match an independently trusted expected digest before QEMU receives it. A hash only proves equality with the expected digest; it does not establish provenance if the digest itself came from an untrusted source.
 - All target writes are confined to the guest's synthetic disk; no host-side loop, NBD, mount, partition, or format operations are permitted.
