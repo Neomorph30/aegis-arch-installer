@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from aegis.hardware import (
     HardwareInspectionError,
+    _active_swap_devices,
     _sysfs_block_node,
     read_assessment_observation,
     _cpu_label,
@@ -353,6 +354,25 @@ class StorageAndProbeTests(unittest.TestCase):
             {"path": "/dev/sda", "type": "disk", "children": malformed},
         ]}), "")
         self.assertEqual(read_disks()[0]["children"], malformed)
+
+    def test_unresolvable_active_swap_entry_is_unknown_not_safe(self):
+        with patch("aegis.hardware.Path.read_text",
+                   return_value="Filename Type Size Used Priority\\n/dev/missing-swap partition 1024 0 -2\\n"), \\
+             patch("aegis.hardware.os.stat", side_effect=OSError("device disappeared")):
+            self.assertIsNone(_active_swap_devices())
+
+    def test_read_disks_rejects_excessive_topology_instead_of_truncating(self):
+        root = {"path": "/dev/vda", "type": "disk", "children": []}
+        cursor = root
+        for index in range(18):
+            child = {"path": f"/dev/vda{index + 1}", "type": "part", "children": []}
+            cursor["children"].append(child)
+            cursor = child
+        with patch("aegis.hardware.shutil.which", return_value="/usr/bin/lsblk"), \\
+             patch("aegis.hardware.subprocess.run",
+                   return_value=CompletedProcess([], 0, json.dumps({"blockdevices": [root]}), "")):
+            with self.assertRaisesRegex(HardwareInspectionError, "topology exceeds safety limits"):
+                read_disks()
 
     @patch("aegis.hardware.os.stat")
     def test_sysfs_holder_lookup_uses_kernel_major_minor_not_device_basename(self, stat_call):
