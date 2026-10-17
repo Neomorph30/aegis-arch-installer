@@ -179,6 +179,39 @@ class WorkspaceTests(unittest.TestCase):
             self.assertFalse(dst.exists())
 
     @unittest.skipUnless(sys.platform.startswith("linux") and hasattr(os, "O_NOFOLLOW"), "Requires Linux O_NOFOLLOW and symlink semantics")
+    def test_guest_payload_is_built_from_reviewed_source_not_caller_iso(self):
+        from subprocess import CompletedProcess
+        from unittest.mock import patch
+        from lab.runtime import GUEST_PREFLIGHT_COMMAND
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            work = root / "private"
+            work.mkdir(mode=0o700)
+            fw = self._firmware(root)
+            iso = root / "arch.iso"
+            iso.write_bytes(b"verified iso fixture")
+
+            def fake_xorriso(command, **kwargs):
+                self.assertEqual(command[0], "xorriso")
+                output = Path(command[command.index("-o") + 1])
+                output.write_bytes(b"built trusted helper ISO")
+                return CompletedProcess(command, 0, "", "")
+
+            with patch("lab.runtime.shutil.which", return_value="/usr/bin/xorriso"), \
+                 patch("lab.runtime.subprocess.run", side_effect=fake_xorriso), \
+                 patch("lab.runtime.verify_arch_iso"):
+                output = prepare_workspace(
+                    work, LabConfig(primary_bytes=GIB, secondary_bytes=GIB), fw, iso,
+                    iso_sha256="a" * 64, include_guest_payload=True,
+                )
+
+            source = Path(__file__).resolve().parents[1] / "lab" / "guest_storage_gate.py"
+            self.assertEqual((work / "guest-payload" / "gate.py").read_bytes(), source.read_bytes())
+            self.assertEqual(output["payload_iso"].read_bytes(), b"built trusted helper ISO")
+            self.assertIn("--preflight", GUEST_PREFLIGHT_COMMAND)
+
+    @unittest.skipUnless(sys.platform.startswith("linux") and hasattr(os, "O_NOFOLLOW"), "Requires Linux O_NOFOLLOW and symlink semantics")
     def test_iso_copy_and_size_limit(self):
         with tempfile.TemporaryDirectory() as d:
             source = Path(d) / 'example.iso'
