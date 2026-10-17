@@ -255,6 +255,10 @@ class GuestStorageGateTests(unittest.TestCase):
         sample["devices"][1]["major_minor"] = sample["devices"][0]["major_minor"]
         with self.assertRaisesRegex(GuestStorageGateError, "Duplicate kernel major/minor identity"):
             validate_lab_primary(sample)
+        sample = fixture()
+        sample["devices"][1]["major_minor"] = "0252:000"
+        with self.assertRaisesRegex(GuestStorageGateError, "Duplicate kernel major/minor identity"):
+            validate_lab_primary(sample)
 
     def test_missing_or_malformed_kernel_identity_blocks(self):
         for value in (None, "252", "252:0:extra", "x:0", ""):
