@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 APPROVED_SUBPROCESS_MODULES = frozenset({"hardware.py", "network.py"})
+APPROVED_SUBPROCESS_PATHS = frozenset({"aegis/hardware.py", "aegis/network.py"})
 APPROVED_LAB_SUBPROCESS_MODULES = frozenset({
     "lab/runtime.py", "lab/guest_probe.py", "lab/guest_storage_gate.py",
 })
@@ -34,13 +35,15 @@ def _call_name(node: ast.AST) -> str | None:
 
 
 def _subprocess_allowed(filename: str) -> bool:
-    """Allow subprocess only in audited modules, using paths for the lab layer."""
-    normalized = filename.replace("\\", "/").lstrip("./")
+    """Allow subprocess only in exact audited source paths."""
+    normalized = filename.replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
     if normalized.startswith("lab/"):
         return normalized in APPROVED_LAB_SUBPROCESS_MODULES
     if "/" in normalized:
-        return normalized.startswith("aegis/") and Path(normalized).name in APPROVED_SUBPROCESS_MODULES
-    # Bare names are retained for direct unit tests of the checker.
+        return normalized in APPROVED_SUBPROCESS_PATHS
+    # Bare module names are retained for direct unit tests of the checker.
     return normalized in APPROVED_SUBPROCESS_MODULES
 
 
