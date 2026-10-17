@@ -210,6 +210,28 @@ class ReportSafetyTests(unittest.TestCase):
                 self.assertEqual(redacted[key], "[REDACTED]")
 
 
+    def test_quoted_credentials_and_multiline_pem_are_redacted(self):
+        p = plan()
+        p["warnings"].append(
+            'password="QUOTED_PASSWORD_CANARY" token=\'QUOTED_TOKEN_CANARY\' '
+            '-----BEGIN PRIVATE KEY-----\\nPEM_PRIVATE_CANARY\\n-----END PRIVATE KEY-----'
+        )
+        rendered = html_report(p)
+        for secret in ("QUOTED_PASSWORD_CANARY", "QUOTED_TOKEN_CANARY", "PEM_PRIVATE_CANARY"):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, rendered)
+        self.assertIn("[REDACTED PRIVATE KEY BLOCK]", rendered)
+
+    def test_json_public_view_redacts_quoted_and_pem_credentials(self):
+        value = {
+            "message": 'password="JSON_QUOTED_CANARY" token=\'JSON_TOKEN_CANARY\'',
+            "pem": "-----BEGIN RSA PRIVATE KEY-----\\nJSON_PEM_CANARY\\n-----END RSA PRIVATE KEY-----",
+        }
+        encoded = json.dumps(public_view(value))
+        for secret in ("JSON_QUOTED_CANARY", "JSON_TOKEN_CANARY", "JSON_PEM_CANARY"):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, encoded)
+
     def test_compound_luks_recovery_key_assignment_is_redacted(self):
         p = plan()
         p["warnings"].append("luks_recovery_key=RECOVERY-MATERIAL")
