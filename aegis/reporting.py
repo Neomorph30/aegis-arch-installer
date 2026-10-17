@@ -7,14 +7,31 @@ from typing import Any
 import json
 import re
 
-REDACT_TERMS = (
+# Compare normalized names so common separator variants (tpm-pin, tpm pin,
+# private-key, etc.) receive the same treatment.
+REDACT_TERMS = {
     "password", "passphrase", "secret", "credential", "keyfile",
-    "recovery_key", "tpm_pin", "token", "private_key", "api_key",
-)
-IDENTIFIER_TERMS = {"serial", "wwn", "partuuid", "uuid", "mac_address"}
+    "recoverykey", "luksrecoverykey", "tpmpin", "token", "privatekey",
+    "apikey",
+}
+IDENTIFIER_TERMS = {"serial", "wwn", "partuuid", "uuid", "macaddress"}
+PROPOSAL_TEST_STATUSES = frozenset({
+    "BLOCKED", "FAILED", "SKIPPED", "UNVERIFIED", "WARNING",
+    "REVIEW_REQUIRED", "NOT_RUN", "NOT_APPLICABLE",
+})
+
 SECRET_ASSIGNMENT = re.compile(
-    r"(?i)\b(password|passphrase|secret|token|recovery[_-]?key|tpm[_-]?pin)"
-    r"\s*([=:])\s*([^\s,;]+)"
+    # Allow compound names such as luks_recovery_key, while avoiding matches
+    # inside ordinary words. Underscores intentionally count as separators here.
+    r"(?i)(?<![a-z0-9])(luks[_-]?recovery[_-]?key|password|passphrase|"
+    r"secret|credential|keyfile|token|recovery[_-]?key|tpm[_-]?pin|"
+    r"private[_-]?key|api[_-]?key)(?![a-z0-9])"
+    r"\s*([=:])\s*(\"[^\"]*\"|'[^']*'|[^\s,;]+)"
+)
+PEM_PRIVATE_KEY = re.compile(
+    r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----.*?"
+    r"-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----",
+    re.DOTALL,
 )
 
 
@@ -28,7 +45,7 @@ def public_view(value: Any, *, shareable: bool = False) -> Any:
     if isinstance(value, dict):
         result = {}
         for key, item in value.items():
-            lower = str(key).lower()
+            lower = re.sub(r"[^a-z0-9]", "", str(key).lower())
             if any(term in lower for term in REDACT_TERMS) or (shareable and lower in IDENTIFIER_TERMS):
                 result[str(key)] = "[REDACTED]"
             else:
@@ -37,13 +54,34 @@ def public_view(value: Any, *, shareable: bool = False) -> Any:
     if isinstance(value, list):
         return [public_view(v, shareable=shareable) for v in value]
     if isinstance(value, str):
+        # Scrub multiline private material before key/value assignments.
+        value = PEM_PRIVATE_KEY.sub("[REDACTED PRIVATE KEY BLOCK]", value)
         return SECRET_ASSIGNMENT.sub(lambda m: f"{m.group(1)}{m.group(2)}[REDACTED]", value)
     return value
 
 
-def html_report(plan: dict[str, Any], *, shareable: bool = True) -> str:
+def validate_proposal_evidence(plan: Any) -> None:
+    """Fail closed on missing/malformed evidence or statuses implying execution."""
     if not isinstance(plan, dict) or plan.get("status") != "PROPOSAL_ONLY" or plan.get("execution_enabled") is not False:
         raise ValueError("Refusing report: input is not a non-executable AEGIS proposal")
+    if "tests" not in plan:
+        raise ValueError("Refusing report: verification test evidence is missing")
+    tests = plan["tests"]
+    if not isinstance(tests, list):
+        raise ValueError("Refusing report: verification tests must be a list")
+    for item in tests:
+        if not isinstance(item, dict):
+            raise ValueError("Refusing report: malformed verification test entry")
+        name = item.get("name")
+        result = item.get("result")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("Refusing report: verification test is missing a name")
+        if not isinstance(result, str) or result not in PROPOSAL_TEST_STATUSES:
+            raise ValueError("Refusing report: proposal-only verification status is invalid or claims execution")
+
+
+def html_report(plan: dict[str, Any], *, shareable: bool = True) -> str:
+    validate_proposal_evidence(plan)
     clean = public_view(plan, shareable=shareable)
     actions = "\n".join(
         "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>".format(

@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 import hashlib
 import json
+import re
 
 MIB = 1024 ** 2
 GIB = 1024 ** 3
@@ -29,6 +30,18 @@ class PlanError(ValueError):
     pass
 
 
+_DEVICE_PATH = re.compile(r"^/dev/[A-Za-z0-9_.!:+-]+(?:/[A-Za-z0-9_.!:+-]+)*$")
+
+
+def _valid_device_path(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and _DEVICE_PATH.fullmatch(value) is not None
+        and all(part not in {".", ".."} for part in value.split("/"))
+        and not any(ord(char) < 32 or ord(char) == 127 for char in value)
+    )
+
+
 def _validated_disks(inventory: dict[str, Any]) -> list[dict[str, Any]]:
     raw = inventory.get("disks")
     if not isinstance(raw, list) or not raw:
@@ -40,14 +53,15 @@ def _validated_disks(inventory: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(disk, dict):
             raise PlanError(f"Inventory disk entry {index} is malformed")
         path = disk.get("path")
-        if not isinstance(path, str) or not path.startswith("/dev/") or ".." in path or path in paths:
+        if not _valid_device_path(path) or path in paths:
             raise PlanError("Inventory has an invalid or duplicate device path")
         paths.add(path)
         # Treat serial and WWN as separate namespaces, but reject collisions within each.
         for field in ("serial", "wwn"):
             value = disk.get(field)
             if value is not None and value != "":
-                if not isinstance(value, str) or not value.strip():
+                if (not isinstance(value, str) or not value.strip()
+                        or any(ord(char) < 32 or ord(char) == 127 for char in value)):
                     raise PlanError(f"Inventory contains an invalid {field}")
                 key = f"{field}:{value.strip()}"
                 if key in identifiers:
@@ -58,8 +72,8 @@ def _validated_disks(inventory: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _find_disk(inventory: dict[str, Any], path: str) -> dict[str, Any]:
-    if not isinstance(path, str) or not path.startswith("/dev/") or ".." in path:
-        raise PlanError("Disk must have a /dev/ device path")
+    if not _valid_device_path(path):
+        raise PlanError("Disk must have a valid /dev/ device path")
     disks = _validated_disks(inventory)
     matches = [d for d in disks if d.get("path") == path and d.get("type", "disk") == "disk"]
     if len(matches) != 1:
@@ -89,24 +103,46 @@ def verify_storage_plan_integrity(plan: dict[str, Any]) -> bool:
 
 
 def _partition_summary(children: Any) -> list[dict[str, Any]]:
-    result: list[dict[str, Any]] = []
+    """Validate child topology instead of silently dropping ambiguous observations."""
     if not isinstance(children, list):
-        return result
+        raise PlanError("Inventory contains a malformed partition tree")
+    result: list[dict[str, Any]] = []
     for child in children:
         if not isinstance(child, dict):
-            continue
-        mounts = child.get("mountpoints") or []
-        if isinstance(mounts, str):
-            mounts = [mounts]
+            raise PlanError("Inventory contains a malformed partition entry")
+        path = child.get("path")
+        if path is not None and not _valid_device_path(path):
+            raise PlanError("Inventory contains an invalid partition device path")
+        if "mountpoints" not in child and "mountpoint" not in child:
+            raise PlanError("Inventory is missing partition mountpoint observations")
+        raw_mounts = child.get("mountpoints", child.get("mountpoint"))
+        if raw_mounts is None or raw_mounts == "":
+            mounts: list[str] = []
+        elif isinstance(raw_mounts, str):
+            if not raw_mounts.strip():
+                raise PlanError("Inventory contains a whitespace-only partition mountpoint")
+            mounts = [raw_mounts]
+        elif isinstance(raw_mounts, list):
+            mounts = []
+            for mount in raw_mounts:
+                if mount is None or mount == "":
+                    continue
+                if not isinstance(mount, str) or not mount.strip():
+                    raise PlanError("Inventory contains malformed partition mountpoint data")
+                mounts.append(mount)
+        else:
+            raise PlanError("Inventory contains malformed partition mountpoint data")
         result.append({
-            "path": child.get("path"),
+            "path": path,
             "type": child.get("type"),
             "filesystem": child.get("fstype"),
             "size_bytes": child.get("size"),
-            "mountpoints": [m for m in mounts if isinstance(m, str) and m.strip()],
+            "mountpoints": mounts,
             "partuuid": child.get("partuuid"),
         })
-        result.extend(_partition_summary(child.get("children", [])))
+        if "children" not in child or not isinstance(child["children"], list):
+            raise PlanError("Inventory is missing a valid nested partition topology")
+        result.extend(_partition_summary(child["children"]))
     return result
 
 
@@ -120,9 +156,27 @@ def _observed_bool(disk: dict[str, Any], field: str) -> bool | None:
 
 
 def _disk_identity(disk: dict[str, Any]) -> dict[str, Any]:
-    mounts = disk.get("mountpoints") or []
-    if isinstance(mounts, str):
-        mounts = [mounts]
+    if "mountpoints" not in disk and "mountpoint" not in disk:
+        raise PlanError("Inventory is missing physical-disk mountpoint observations")
+    raw_mounts = disk.get("mountpoints", disk.get("mountpoint"))
+    if raw_mounts is None or raw_mounts == "":
+        mounts: list[str] = []
+    elif isinstance(raw_mounts, str):
+        if not raw_mounts.strip():
+            raise PlanError("Inventory contains a whitespace-only disk mountpoint")
+        mounts = [raw_mounts]
+    elif isinstance(raw_mounts, list):
+        mounts = []
+        for mount in raw_mounts:
+            if mount is None or mount == "":
+                continue
+            if not isinstance(mount, str) or not mount.strip():
+                raise PlanError("Inventory contains malformed disk mountpoint data")
+            mounts.append(mount)
+    else:
+        raise PlanError("Inventory contains malformed disk mountpoint data")
+    if "children" not in disk or not isinstance(disk["children"], list):
+        raise PlanError("Inventory is missing a valid physical-disk child topology")
     return {
         "path": disk.get("path"),
         "model": str(disk.get("model") or "").strip(),
@@ -134,7 +188,7 @@ def _disk_identity(disk: dict[str, Any]) -> dict[str, Any]:
         "read_only": _observed_bool(disk, "ro"),
         "hotplug": _observed_bool(disk, "hotplug"),
         "mountpoints": [m for m in mounts if isinstance(m, str) and m.strip()],
-        "current_partitions": _partition_summary(disk.get("children", [])),
+        "current_partitions": _partition_summary(disk["children"]),
     }
 
 
@@ -209,9 +263,9 @@ def build_storage_plan(
     """Create a human-reviewable plan. It cannot be executed by this package."""
     if not isinstance(inventory, dict):
         raise PlanError("Hardware inventory must be an object")
-    if secondary_action not in SECONDARY_ACTIONS:
+    if not isinstance(secondary_action, str) or secondary_action not in SECONDARY_ACTIONS:
         raise PlanError(f"secondary_action must be one of {sorted(SECONDARY_ACTIONS)}")
-    if filesystem not in FILESYSTEMS:
+    if not isinstance(filesystem, str) or filesystem not in FILESYSTEMS:
         raise PlanError(f"filesystem must be one of {sorted(FILESYSTEMS)}")
     if secondary is None and secondary_action != "preserve":
         raise PlanError("Select a secondary disk to propose unlock or erase")

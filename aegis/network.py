@@ -101,8 +101,12 @@ def launch_wifi_setup() -> int:
         # Inherit terminal streams so the system tool prompts for any secrets.
         # Never capture or log password input or include it on command line.
         return subprocess.run(command, check=False).returncode
-    except OSError as exc:
-        raise NetworkSetupError("Unable to start the system Wi-Fi configuration tool") from exc
+    except OSError:
+        # Do not chain the raw OS exception: it can contain paths or other
+        # environment details that the CLI may print in a traceback.
+        raise NetworkSetupError(
+            "Unable to start the system Wi-Fi configuration tool"
+        ) from None
 
 
 def print_network_status(status: dict[str, object]) -> None:

@@ -65,6 +65,19 @@ class NetworkTests(unittest.TestCase):
     def test_iwd_fallback_on_archiso(self, _which, _nm):
         self.assertEqual(network.setup_tool(), ("iwd (iwctl)", ["/usr/bin/iwctl"]))
 
+    @patch("aegis.network.sys.stdin.isatty", return_value=True)
+    @patch("aegis.network.sys.stdout.isatty", return_value=True)
+    @patch("aegis.network.setup_tool", return_value=("iwd", ["/usr/bin/iwctl"]))
+    def test_wifi_start_error_does_not_chain_os_details(self, _tool, _out, _in):
+        with patch(
+            "aegis.network.subprocess.run",
+            side_effect=OSError("private-path-or-environment-detail"),
+        ):
+            with self.assertRaises(network.NetworkSetupError) as caught:
+                network.launch_wifi_setup()
+        self.assertIsNone(caught.exception.__cause__)
+        self.assertNotIn("private-path-or-environment-detail", str(caught.exception))
+
     @patch("aegis.network.sys.stdout.isatty", return_value=False)
     def test_never_launch_wifi_noninteractive(self, _tty):
         with patch("aegis.network.subprocess.run") as run:
@@ -125,6 +138,32 @@ class NetworkTests(unittest.TestCase):
             network.interactive_preflight()
         request.assert_not_called()
         launch.assert_not_called()
+
+    @patch("aegis.cli.interactive_preflight", side_effect=network.NetworkSetupError("Wi-Fi setup unavailable"))
+    @patch("aegis.cli.sys.stdout.isatty", return_value=True)
+    @patch("aegis.cli.sys.stdin.isatty", return_value=True)
+    def test_cli_reports_safe_wifi_error_without_traceback(self, _in, _out, _preflight):
+        from aegis.cli import main
+        errors = io.StringIO()
+        with patch("sys.stderr", errors):
+            code = main(["network", "--connect"])
+        self.assertEqual(code, 2)
+        self.assertIn("Wi-Fi setup unavailable", errors.getvalue())
+        self.assertNotIn("Traceback", errors.getvalue())
+
+    @patch("aegis.cli.interactive_preflight")
+    @patch("aegis.cli.sys.stdout.isatty", return_value=False)
+    @patch("aegis.cli.sys.stdin.isatty", return_value=False)
+    def test_cli_connect_noninteractive_fails_before_network_setup(self, _stdin, _stdout, interactive):
+        from aegis.cli import main
+        errors = io.StringIO()
+        with patch("sys.stderr", errors), patch("builtins.input") as request:
+            code = main(["network", "--connect"])
+        self.assertEqual(code, 2)
+        interactive.assert_not_called()
+        request.assert_not_called()
+        self.assertNotIn("Traceback", errors.getvalue())
+        self.assertIn("local terminal", errors.getvalue())
 
     @patch("aegis.cli.network_preflight")
     def test_readonly_check_does_not_prompt(self, preflight):

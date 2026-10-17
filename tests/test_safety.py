@@ -5,7 +5,7 @@ import unittest
 
 from aegis.planner import (PlanError, ALIGNMENT, EFI_SIZE_BYTES,
                            GPT_HEADROOM_BYTES, build_storage_plan)
-from aegis.reporting import html_report, public_view
+from aegis.reporting import html_report, public_view, validate_proposal_evidence
 from aegis.profiles import recommend
 
 FIXTURE = json.loads((Path(__file__).resolve().parent.parent / "fixtures" / "desktop-example.json").read_text())
@@ -128,6 +128,31 @@ class StorageSafetyTests(unittest.TestCase):
 
 
 class ReportSafetyTests(unittest.TestCase):
+
+    def test_shared_proposal_evidence_validator_rejects_forged_json_status(self):
+        for result in ("PASSED", "PASS", "SUCCESS", "verified", None, ""):
+            with self.subTest(result=result):
+                p = plan()
+                p["tests"][0]["result"] = result
+                with self.assertRaisesRegex(ValueError, "verification status"):
+                    validate_proposal_evidence(p)
+
+    def test_shared_proposal_evidence_validator_rejects_missing_or_malformed_tests(self):
+        cases = []
+        missing = plan()
+        del missing["tests"]
+        cases.append((missing, "evidence is missing"))
+        not_list = plan()
+        not_list["tests"] = {"name": "one", "result": "SKIPPED"}
+        cases.append((not_list, "must be a list"))
+        malformed = plan()
+        malformed["tests"] = [{"name": "", "result": "SKIPPED"}]
+        cases.append((malformed, "missing a name"))
+        for p, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(ValueError, message):
+                    validate_proposal_evidence(p)
+
     def test_html_denies_installed_claim(self):
         p = plan()
         p["status"] = "SUCCESS"
@@ -151,16 +176,172 @@ class ReportSafetyTests(unittest.TestCase):
 
     def test_escapes_html_and_credentials(self):
         p = plan()
-        p["warnings"].append("<script>alert('no')</script> password=hunter2")
+        p["warnings"].append(
+            "<script>alert('no')</script> password=hunter2 "
+            "private_key=PRIVATE-MATERIAL api_key=API-MATERIAL credential=LOGIN-MATERIAL"
+        )
         rendered = html_report(p)
         self.assertNotIn("<script>", rendered)
-        self.assertNotIn("hunter2", rendered)
+        for secret in ("hunter2", "PRIVATE-MATERIAL", "API-MATERIAL", "LOGIN-MATERIAL"):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, rendered)
         self.assertIn("&lt;script&gt;", rendered)
 
     def test_sensitive_keys_redacted(self):
-        redacted = public_view({"password": "not-safe", "tpm_pin": "123456", "nested": {"secret": "abc"}})
+        values = {
+            "password": "not-safe",
+            "tpm_pin": "123456",
+            "nested": {"secret": "abc"},
+            "TPM-PIN": "pin-here",
+            "private-key": "private-here",
+            "api key": "api-here",
+            "luks_recovery_key": "recovery-here",
+        }
+        redacted = public_view(values)
         self.assertEqual(redacted["password"], "[REDACTED]")
         self.assertEqual(redacted["nested"]["secret"], "[REDACTED]")
+        for key, secret in (
+            ("TPM-PIN", "pin-here"),
+            ("private-key", "private-here"),
+            ("api key", "api-here"),
+            ("luks_recovery_key", "recovery-here"),
+        ):
+            with self.subTest(key=key):
+                self.assertEqual(redacted[key], "[REDACTED]")
+
+
+    def test_quoted_credentials_and_multiline_pem_are_redacted(self):
+        p = plan()
+        p["warnings"].append(
+            'password="QUOTED_PASSWORD_CANARY" token=\'QUOTED_TOKEN_CANARY\' '
+            '-----BEGIN PRIVATE KEY-----\\nPEM_PRIVATE_CANARY\\n-----END PRIVATE KEY-----'
+        )
+        rendered = html_report(p)
+        for secret in ("QUOTED_PASSWORD_CANARY", "QUOTED_TOKEN_CANARY", "PEM_PRIVATE_CANARY"):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, rendered)
+        self.assertIn("[REDACTED PRIVATE KEY BLOCK]", rendered)
+
+    def test_json_public_view_redacts_quoted_and_pem_credentials(self):
+        value = {
+            "message": 'password="JSON_QUOTED_CANARY" token=\'JSON_TOKEN_CANARY\'',
+            "pem": "-----BEGIN RSA PRIVATE KEY-----\\nJSON_PEM_CANARY\\n-----END RSA PRIVATE KEY-----",
+        }
+        encoded = json.dumps(public_view(value))
+        for secret in ("JSON_QUOTED_CANARY", "JSON_TOKEN_CANARY", "JSON_PEM_CANARY"):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, encoded)
+
+    def test_compound_luks_recovery_key_assignment_is_redacted(self):
+        p = plan()
+        p["warnings"].append("luks_recovery_key=RECOVERY-MATERIAL")
+        rendered = html_report(p)
+        self.assertNotIn("RECOVERY-MATERIAL", rendered)
+        self.assertIn("luks_recovery_key=[REDACTED]", rendered)
+
+    def test_html_rejects_forged_passed_or_unknown_verification_status(self):
+        for result in ("PASSED", "PASS", "SUCCESS", "verified"):
+            with self.subTest(result=result):
+                p = plan()
+                p["tests"][0]["result"] = result
+                with self.assertRaisesRegex(ValueError, "verification status"):
+                    html_report(p)
+
+    def test_html_rejects_missing_verification_evidence(self):
+        p = plan()
+        del p["tests"]
+        with self.assertRaisesRegex(ValueError, "verification test evidence is missing"):
+            html_report(p)
+
+    def test_html_rejects_non_list_verification_evidence(self):
+        p = plan()
+        p["tests"] = {"name": "not a list", "result": "SKIPPED"}
+        with self.assertRaisesRegex(ValueError, "verification tests must be a list"):
+            html_report(p)
+
+    def test_html_rejects_malformed_verification_entries(self):
+        for entry in ("SKIPPED", None, [], {"name": " ", "result": "SKIPPED"}):
+            with self.subTest(entry=entry):
+                p = plan()
+                p["tests"] = [entry]
+                with self.assertRaises(ValueError):
+                    html_report(p)
+
+    def test_html_accepts_not_applicable_status(self):
+        p = plan()
+        p["tests"] = [{"name": "unsupported optional control", "result": "NOT_APPLICABLE"}]
+        self.assertIn("NOT_APPLICABLE", html_report(p))
+
+    def test_json_and_html_preserve_same_non_pass_status_contract(self):
+        p = plan()
+        p["tests"] = [
+            {"name": "optional", "result": "NOT_APPLICABLE"},
+            {"name": "not run", "result": "NOT_RUN"},
+            {"name": "review", "result": "REVIEW_REQUIRED"},
+            {"name": "blocked", "result": "BLOCKED"},
+        ]
+        json_tests = public_view(p)["tests"]
+        html = html_report(p)
+        self.assertEqual(
+            [(t["name"], t["result"]) for t in json_tests],
+            [(t["name"], t["result"]) for t in p["tests"]],
+        )
+        for status in ("NOT_APPLICABLE", "NOT_RUN", "REVIEW_REQUIRED", "BLOCKED"):
+            self.assertIn(status, html)
+        self.assertNotIn(">PASSED</td>", html)
+
+    def test_html_accepts_explicit_non_pass_proposal_statuses(self):
+        p = plan()
+        p["tests"] = [
+            {"name": "future control", "result": "SKIPPED"},
+            {"name": "unrun control", "result": "UNVERIFIED"},
+            {"name": "blocked control", "result": "BLOCKED"},
+            {"name": "failed preflight", "result": "FAILED"},
+        ]
+        rendered = html_report(p)
+        for status in ("SKIPPED", "UNVERIFIED", "BLOCKED", "FAILED"):
+            self.assertIn(status, rendered)
+
+    def test_seeded_secret_variants_never_appear_in_shareable_html_or_json_view(self):
+        p = plan()
+        p["diagnostic_metadata"] = {
+            "tpm-pin": "SEED_TPM_PIN_7f31",
+            "luks_recovery_key": "SEED_LUKS_RECOVERY_2a9c",
+            "signing_private_key": "SEED_SIGNING_PRIVATE_6b14",
+            "api_key": "SEED_API_TOKEN_4d82",
+            "nested": [
+                {"password": "SEED_PASSWORD_8c23"},
+                {"notes": "credential=SEED_CREDENTIAL_5e17"},
+                {"detail": "token:SEED_TOKEN_1a90"},
+            ],
+        }
+        json_view = json.dumps(public_view(p), sort_keys=True)
+        html = html_report(p, shareable=True)
+        for secret in (
+            "SEED_TPM_PIN_7f31", "SEED_LUKS_RECOVERY_2a9c",
+            "SEED_SIGNING_PRIVATE_6b14", "SEED_API_TOKEN_4d82",
+            "SEED_PASSWORD_8c23", "SEED_CREDENTIAL_5e17", "SEED_TOKEN_1a90",
+        ):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, json_view)
+                self.assertNotIn(secret, html)
+
+    def test_report_never_invents_passed_test_evidence(self):
+        p = plan()
+        self.assertTrue(all(item.get("result") != "PASSED" for item in p["tests"]))
+        rendered = html_report(p)
+        self.assertNotIn(">PASSED</td>", rendered)
+        self.assertIn("NOT EXECUTED OR VERIFIED", rendered)
+
+    def test_shareable_json_view_redacts_hardware_identifiers_recursively(self):
+        value = {
+            "device": {"serial": "SEED_SERIAL_1", "wwn": "SEED_WWN_2"},
+            "nested": [{"mac_address": "SEED_MAC_3", "part_uuid": "SEED_PARTUUID_4"}],
+        }
+        encoded = json.dumps(public_view(value, shareable=True), sort_keys=True)
+        for secret in ("SEED_SERIAL_1", "SEED_WWN_2", "SEED_MAC_3", "SEED_PARTUUID_4"):
+            with self.subTest(secret=secret):
+                self.assertNotIn(secret, encoded)
 
 
 class ProfileTests(unittest.TestCase):

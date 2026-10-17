@@ -134,7 +134,7 @@ def _copy_regular_file(src: Path, dst: Path, *, max_bytes: int) -> int:
         os.close(fd)
 
 
-def prepare_workspace(workspace: Path, config: LabConfig, firmware: tuple[Path, Path], iso: Path | None, *, iso_sha256: str | None = None) -> dict[str, Path]:
+def prepare_workspace(workspace: Path, config: LabConfig, firmware: tuple[Path, Path], iso: Path | None, *, iso_sha256: str | None = None, payload_iso: Path | None = None) -> dict[str, Path]:
     """Only call inside private TemporaryDirectory created by this process."""
     config.validate()
     if not workspace.is_dir() or workspace.is_symlink() or (workspace.stat().st_mode & 0o077):
@@ -143,6 +143,8 @@ def prepare_workspace(workspace: Path, config: LabConfig, firmware: tuple[Path, 
         raise LabError("An ISO requires an independently supplied --iso-sha256 digest")
     if iso is None and iso_sha256 is not None:
         raise LabError("An ISO digest was supplied without an ISO path")
+    if payload_iso is not None and iso is None:
+        raise LabError("A guest preflight payload requires the verified Arch ISO")
     p = workspace / "primary.raw"
     s = workspace / "secondary.raw"
     _exclusive_sparse_file(p, config.primary_bytes)
@@ -162,6 +164,10 @@ def prepare_workspace(workspace: Path, config: LabConfig, firmware: tuple[Path, 
         except ISOValidationError as exc:
             raise LabError(f"Installer ISO verification failed: {exc}") from exc
         result["iso"] = dst
+    if payload_iso is not None:
+        payload_dst = workspace / "guest-preflight.iso"
+        _copy_regular_file(payload_iso, payload_dst, max_bytes=32 * 1024 * 1024)
+        result["payload_iso"] = payload_dst
     return result
 
 
@@ -173,6 +179,7 @@ def command_lines(
     interactive: bool = False,
     network_mode: str = "disabled",
     observe_boot: bool = False,
+    observe_guest_preflight: bool = False,
 ) -> tuple[list[str], list[str]]:
     """Construct hard-coded QEMU options; no user-supplied QEMU options."""
     config.validate()
@@ -186,6 +193,10 @@ def command_lines(
             raise LabError(f"Unexpected {name} path")
     if "iso" in prepared and prepared["iso"] != folder / "installer.iso":
         raise LabError("Unexpected ISO path")
+    if "payload_iso" in prepared and prepared["payload_iso"] != folder / "guest-preflight.iso":
+        raise LabError("Unexpected guest preflight payload path")
+    if observe_guest_preflight and ("iso" not in prepared or "payload_iso" not in prepared):
+        raise LabError("Guest preflight observation requires both verified installer and payload ISOs")
     # QEMU option-valued paths cannot contain argument separators.
     paths = [str(folder), str(firmware[0]), str(firmware[1])]
     if any(any(char in v for char in ",\n\r") for v in paths):
@@ -198,6 +209,10 @@ def command_lines(
             "-monitor", "none", "-serial", "none",
             "-nic", "none" if network_mode == "disabled" else "user,model=virtio-net-pci",
             "-device", "VGA",
+            # -nodefaults suppresses implicit input devices; add a guest-only
+            # virtual USB controller and keyboard so QMP keystrokes reach Arch.
+            "-device", "qemu-xhci,id=usb",
+            "-device", "usb-kbd,bus=usb.0",
             "-qmp", f"unix:{prepared['qmp_sock']},server=on,wait=off",
             "-drive", f"if=pflash,format=raw,readonly=on,file={firmware[0]}",
             "-drive", f"if=pflash,format=raw,file={prepared['vars']}",
@@ -216,6 +231,11 @@ def command_lines(
                  "-drive", f"if=none,id=installer,media=cdrom,format=raw,readonly=on,file={prepared['iso']}",
                  "-device", "virtio-scsi-pci,id=scsi0",
                  "-device", "scsi-cd,bus=scsi0.0,drive=installer"]
+    if "payload_iso" in prepared:
+        # Keep the payload backend unattached during boot so Archiso cannot mistake
+        # the helper ISO for its boot medium. The read-only CD device is hot-plugged
+        # through QMP only after the actual live root prompt has been verified.
+        qemu += ["-drive", f"if=none,id=guestpayload,media=cdrom,format=raw,readonly=on,file={prepared['payload_iso']}"]
     return tpm, qemu
 
 
@@ -266,6 +286,230 @@ def query_qmp(path: Path, screenshot_path: Path | None = None) -> dict[str, obje
             return result
 
 
+GUEST_PREFLIGHT_COMMAND = "mount /dev/sr1 /mnt; python /mnt/gate.py --preflight --marker"
+
+
+def _arch_live_root_prompt_line(ocr: str) -> str | None:
+    """Return a standalone Arch root shell prompt, never a boot/login banner."""
+    import re
+
+    # Do not flatten OCR whitespace before parsing lines: doing so can turn an
+    # Archiso login banner containing "root@archiso" into a false shell prompt.
+    # Accept only a whole OCR line consisting of the expected prompt.
+    pattern = re.compile(r"root\s*@?\s*archiso(?:\s+~)?\s*#(?:\s*[_|]?)")
+    for raw_line in reversed(ocr.splitlines()):
+        line = " ".join(raw_line.casefold().split())
+        if line and pattern.fullmatch(line):
+            return line
+    return None
+
+
+def _has_arch_live_root_prompt(ocr: str) -> bool:
+    return _arch_live_root_prompt_line(ocr) is not None
+
+
+def _guest_screen_ocr(screenshot: Path, *, timeout: int = 20, preflight_result: bool = False) -> str:
+    """Use a second OCR layout when the compact terminal layout misses shell text.
+
+    QEMU screenshots can contain both the Archiso login banner and a real shell
+    prompt. Tesseract's single-block mode sometimes omits the prompt line, so
+    retry the same immutable screenshot with automatic page segmentation before
+    concluding that the guest has not reached a shell or emitted its marker.
+    """
+    first: str | None
+    try:
+        first = subprocess.run(
+            ["tesseract", str(screenshot), "stdout", "--psm", "6"],
+            check=True, capture_output=True, text=True, timeout=timeout,
+        ).stdout
+    except subprocess.TimeoutExpired:
+        # A slow single-block OCR pass must not prevent trying the alternate
+        # layout that can recover a prompt or marker from the same screenshot.
+        first = None
+
+    if first is not None:
+        normalized_first = " ".join(first.casefold().split())
+        if preflight_result:
+            if ("aegis preflight pass" in normalized_first
+                    or "aegis preflight blocked" in normalized_first):
+                return first
+        elif _has_arch_live_root_prompt(first):
+            return first
+
+    try:
+        second = subprocess.run(
+            ["tesseract", str(screenshot), "stdout", "--psm", "3"],
+            check=True, capture_output=True, text=True, timeout=timeout,
+        ).stdout
+    except subprocess.TimeoutExpired:
+        if first is not None:
+            return first
+        raise
+    normalized_second = " ".join(second.casefold().split())
+    if preflight_result:
+        if ("aegis preflight pass" in normalized_second
+                or "aegis preflight blocked" in normalized_second):
+            return second
+    elif _has_arch_live_root_prompt(second):
+        return second
+    if first is None:
+        return second
+    return second if len(second) > len(first) else first
+
+
+def press_qmp_enter(path: Path) -> None:
+    """Send one Enter key only to dismiss a login/terminal banner; never type text."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(3.0)
+        client.connect(str(path))
+        with client.makefile("rwb") as stream:
+            def receive() -> dict:
+                for _ in range(16):
+                    line = stream.readline(64 * 1024)
+                    if not line:
+                        raise LabError("QMP disconnected while nudging the live terminal")
+                    msg = json.loads(line)
+                    if "error" in msg:
+                        raise LabError("QMP rejected terminal Enter key")
+                    if "return" in msg or "QMP" in msg:
+                        return msg
+                raise LabError("QMP returned too many unexpected terminal input messages")
+            if "QMP" not in receive():
+                raise LabError("QMP greeting missing while nudging the live terminal")
+            stream.write(json.dumps({"execute": "qmp_capabilities"}).encode() + b"\n")
+            stream.flush()
+            if "return" not in receive():
+                raise LabError("QMP capabilities failed while nudging the live terminal")
+            stream.write(json.dumps({
+                "execute": "send-key",
+                "arguments": {"keys": [{"type": "qcode", "data": "ret"}], "hold-time": 80},
+            }).encode() + b"\n")
+            stream.flush()
+            if "return" not in receive():
+                raise LabError("QMP Enter key failed")
+
+
+def type_qmp_command(path: Path, command: str) -> None:
+    """Type only the fixed guest preflight command through QMP; no host shell is invoked."""
+    if command != GUEST_PREFLIGHT_COMMAND:
+        raise LabError("Only the fixed read-only guest preflight command may be typed")
+    qcodes = {
+        " ": "spc", "/": "slash", ".": "dot", "-": "minus", ";": "semicolon",
+    }
+    if not command or any(
+        not (char.isascii() and (char.islower() or char.isdigit() or char in qcodes))
+        for char in command
+    ):
+        raise LabError("Guest preflight command contains unsupported characters")
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(3.0)
+        client.connect(str(path))
+        with client.makefile("rwb") as stream:
+            def receive() -> dict:
+                for _ in range(16):
+                    line = stream.readline(64 * 1024)
+                    if not line:
+                        raise LabError("QMP disconnected while typing guest command")
+                    msg = json.loads(line)
+                    if "error" in msg:
+                        raise LabError("QMP rejected guest command input")
+                    if "return" in msg or "QMP" in msg:
+                        return msg
+                raise LabError("QMP returned too many unexpected input messages")
+            if "QMP" not in receive():
+                raise LabError("QMP greeting missing while typing guest command")
+            def cmd(name: str, arguments: dict[str, object] | None = None) -> object:
+                request: dict[str, object] = {"execute": name}
+                if arguments is not None:
+                    request["arguments"] = arguments
+                stream.write(json.dumps(request).encode() + b"\n")
+                stream.flush()
+                reply = receive()
+                if "return" not in reply:
+                    raise LabError("QMP input command did not return successfully")
+                return reply["return"]
+            cmd("qmp_capabilities")
+            for char in command:
+                key = qcodes.get(char, char)
+                cmd("send-key", {"keys": [{"type": "qcode", "data": key}], "hold-time": 50})
+                # Wait for key release before sending the next key; overlapping
+                # QMP send-key calls can turn characters into unintended chords.
+                time.sleep(0.08)
+            cmd("send-key", {"keys": [{"type": "qcode", "data": "ret"}], "hold-time": 80})
+
+
+def add_guest_payload_device(path: Path) -> None:
+    """Hot-plug the pre-created read-only helper CD only after Arch has booted."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(3.0)
+        client.connect(str(path))
+        with client.makefile("rwb") as stream:
+            def receive() -> dict:
+                for _ in range(16):
+                    line = stream.readline(64 * 1024)
+                    if not line:
+                        raise LabError("QMP disconnected while attaching guest preflight media")
+                    msg = json.loads(line)
+                    if "error" in msg:
+                        raise LabError("QMP rejected guest preflight media attachment")
+                    if "return" in msg or "QMP" in msg:
+                        return msg
+                raise LabError("QMP returned too many unexpected media-attachment messages")
+            if "QMP" not in receive():
+                raise LabError("QMP greeting missing while attaching guest preflight media")
+            def cmd(name: str, arguments: dict[str, object] | None = None) -> object:
+                request: dict[str, object] = {"execute": name}
+                if arguments is not None:
+                    request["arguments"] = arguments
+                stream.write(json.dumps(request).encode() + b"\n")
+                stream.flush()
+                reply = receive()
+                if "return" not in reply:
+                    raise LabError("QMP media-attachment command did not return successfully")
+                return reply["return"]
+            cmd("qmp_capabilities")
+            cmd("device_add", {
+                "driver": "scsi-cd", "id": "guestpayload-device",
+                "bus": "scsi0.0", "drive": "guestpayload", "scsi-id": 1,
+            })
+
+
+
+def _preserve_failure_screenshot(screenshot: Path | None) -> str | None:
+    """Optionally preserve one final guest screen in a caller-created private diagnostics directory.
+
+    Disabled by default. The destination must already be a private directory owned
+    by this unprivileged process; output creation is exclusive and refuses symlinks.
+    """
+    destination = os.environ.get("AEGIS_LAB_DIAGNOSTICS_DIR")
+    if not destination or screenshot is None:
+        return None
+    try:
+        if not _regular_nonlink(screenshot):
+            return None
+        directory = Path(destination)
+        if directory.is_symlink():
+            return None
+        directory_stat = directory.stat()
+        if (not stat.S_ISDIR(directory_stat.st_mode)
+                or directory_stat.st_uid != os.geteuid()
+                or directory_stat.st_mode & 0o077):
+            return None
+        target = directory / "guest-screen.png"
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(target, flags, 0o600)
+        with os.fdopen(fd, "wb") as output, screenshot.open("rb") as source:
+            shutil.copyfileobj(source, output, length=1024 * 1024)
+            output.flush()
+            os.fsync(output.fileno())
+        return "final guest screen preserved as guest-screen.png"
+    except OSError:
+        # Diagnostics must never mask the original boot failure.
+        return None
+
+
 def _finish(proc: subprocess.Popen | None) -> None:
     if proc is None:
         return
@@ -283,10 +527,12 @@ def launch(
     iso: Path | None = None,
     *,
     iso_sha256: str | None = None,
+    payload_iso: Path | None = None,
     smoke: bool = True,
     network_mode: str = "disabled",
     observe_boot: bool = False,
     observe_live: bool = False,
+    observe_guest_preflight: bool = False,
     live_timeout_seconds: int = 120,
     popen: Callable[..., subprocess.Popen] = subprocess.Popen,
 ) -> dict[str, object]:
@@ -294,14 +540,18 @@ def launch(
     config.validate()
     if network_mode not in NETWORK_MODES:
         raise LabError("Unsupported network mode; choose disabled or explicit user-mode NAT")
-    if (observe_boot or observe_live) and iso is None:
+    if (observe_boot or observe_live or observe_guest_preflight) and iso is None:
         raise LabError("Boot observation requires a verified Arch ISO")
-    if (observe_boot or observe_live) and shutil.which("tesseract") is None:
+    if observe_guest_preflight and payload_iso is None:
+        raise LabError("Guest preflight observation requires a separate read-only payload ISO")
+    if payload_iso is not None and not observe_guest_preflight:
+        raise LabError("A guest payload is accepted only for explicit guest-preflight observation")
+    if (observe_boot or observe_live or observe_guest_preflight) and shutil.which("tesseract") is None:
         raise LabError("Boot observation requires Tesseract OCR; no boot claim will be made")
-    if isinstance(live_timeout_seconds, bool) or not isinstance(live_timeout_seconds, int) or not 30 <= live_timeout_seconds <= 240:
-        raise LabError("Live boot timeout must be an integer from 30 to 240 seconds")
-    if observe_boot and observe_live:
-        raise LabError("Choose boot-menu observation or live-environment observation, not both")
+    if isinstance(live_timeout_seconds, bool) or not isinstance(live_timeout_seconds, int) or not 30 <= live_timeout_seconds <= 480:
+        raise LabError("Live boot timeout must be an integer from 30 to 480 seconds")
+    if sum((observe_boot, observe_live, observe_guest_preflight)) > 1:
+        raise LabError("Choose only one boot observation mode")
     if os.name != "posix" or os.geteuid() == 0:
         raise LabError("Run lab as a non-root Linux user")
     available = dependencies()
@@ -312,10 +562,12 @@ def launch(
     # Use OS-controlled secure name generation, independent of TMPDIR overrides.
     with tempfile.TemporaryDirectory(prefix="aegis-lab-", dir="/tmp") as work:
         folder = Path(work)
-        paths = prepare_workspace(folder, config, firmware, iso, iso_sha256=iso_sha256)
+        paths = prepare_workspace(folder, config, firmware, iso, iso_sha256=iso_sha256,
+                                  payload_iso=payload_iso)
         tpm_args, vm_args = command_lines(config, firmware, paths, interactive=not smoke,
                                            network_mode=network_mode,
-                                           observe_boot=(observe_boot or observe_live))
+                                           observe_boot=(observe_boot or observe_live or observe_guest_preflight),
+                                           observe_guest_preflight=observe_guest_preflight)
         tpm_proc = None
         vm_proc = None
         try:
@@ -369,12 +621,25 @@ def launch(
                             try:
                                 ocr = subprocess.run(
                                     ["tesseract", str(screenshot), "stdout", "--psm", "6"],
-                                    check=True, capture_output=True, text=True, timeout=10,
+                                    check=True, capture_output=True, text=True, timeout=20,
                                 ).stdout
+                            except subprocess.TimeoutExpired:
+                                # OCR can be slow on heavily contended software-emulation runners.
+                                # A timeout is not evidence of boot failure; retry only within the
+                                # existing overall live-boot deadline and never infer success.
+                                if vm_proc.poll() is not None:
+                                    raise LabError("QEMU exited while live-environment OCR timed out")
+                                time.sleep(1.0)
+                                continue
                             except (OSError, subprocess.SubprocessError) as exc:
-                                raise LabError("Live-environment screenshot OCR failed; boot remains unverified") from exc
+                                detail = getattr(exc, "stderr", None)
+                                if isinstance(detail, bytes):
+                                    detail = detail.decode("utf-8", errors="replace")
+                                detail = " ".join(str(detail or "").split())[:240]
+                                suffix = f": {detail}" if detail else f" ({type(exc).__name__})"
+                                raise LabError("Live-environment screenshot OCR failed" + suffix + "; boot remains unverified") from exc
                             normalized_ocr = " ".join(ocr.casefold().split())
-                            if "archiso" in normalized_ocr and "root" in normalized_ocr:
+                            if _has_arch_live_root_prompt(ocr):
                                 live_detected = True
                                 break
                             if vm_proc.poll() is not None:
@@ -391,6 +656,115 @@ def launch(
                             "boot_ocr_attempts": attempts,
                             "guest_boot_verified": True,
                         }
+                    elif observe_guest_preflight:
+                        screenshot = folder / "guest-preflight-screen.png"
+                        deadline = time.monotonic() + live_timeout_seconds
+                        attempts = 0
+                        prompt_detected = False
+                        consecutive_prompt_observations = 0
+                        last_prompt_ocr = ""
+                        matched_prompt_ocr = ""
+                        login_banner_nudged = False
+                        while time.monotonic() < deadline:
+                            attempts += 1
+                            query_qmp(paths["qmp_sock"], screenshot)
+                            try:
+                                ocr = _guest_screen_ocr(screenshot, timeout=20)
+                            except subprocess.TimeoutExpired:
+                                if vm_proc.poll() is not None:
+                                    raise LabError("QEMU exited while waiting for guest preflight prompt")
+                                continue
+                            normalized_ocr = " ".join(ocr.casefold().split())
+                            last_prompt_ocr = "".join(
+                                char for char in normalized_ocr if char.isalnum() or char in " .:/_=@#-"
+                            )[:320]
+                            prompt_line = _arch_live_root_prompt_line(ocr)
+                            if prompt_line is not None:
+                                consecutive_prompt_observations += 1
+                                matched_prompt_ocr = prompt_line[:320]
+                                # OCR can mistake boot/login text for a shell prompt.
+                                # Require the same standalone prompt across independent
+                                # screenshots before sending any guest keystrokes.
+                                if consecutive_prompt_observations >= 2:
+                                    prompt_detected = True
+                                    break
+                            else:
+                                consecutive_prompt_observations = 0
+                                # Some Arch ISO boots stop at the tty login banner until
+                                # Enter is pressed. A single Enter contains no command and
+                                # is allowed only for that observed banner; all command text
+                                # remains gated behind two verified standalone root prompts.
+                                if (not login_banner_nudged
+                                        and ("archiso login:" in normalized_ocr
+                                             or "automatic login" in normalized_ocr)):
+                                    press_qmp_enter(paths["qmp_sock"])
+                                    login_banner_nudged = True
+                                    time.sleep(2.0)
+                                    continue
+                            if vm_proc.poll() is not None:
+                                raise LabError("QEMU exited before guest preflight prompt appeared")
+                            time.sleep(2.0)
+                        if not prompt_detected:
+                            detail = f"; last guest screen OCR: {last_prompt_ocr}" if last_prompt_ocr else ""
+                            raise LabError(
+                                "Arch live prompt not detected; guest preflight was not run" + detail
+                            )
+                        # Attach the helper only after the verified Arch live prompt;
+                        # this prevents the second ISO from affecting Archiso boot discovery.
+                        add_guest_payload_device(paths["qmp_sock"])
+                        time.sleep(2.0)  # allow guest udev to create /dev/sr1
+                        # This is a fixed, lowercase command. The guest script is mounted from a
+                        # separate read-only ISO; no command or path is supplied by the caller.
+                        type_qmp_command(
+                            paths["qmp_sock"],
+                            GUEST_PREFLIGHT_COMMAND,
+                        )
+                        preflight_deadline = time.monotonic() + min(90, live_timeout_seconds)
+                        preflight_attempts = 0
+                        preflight_passed = False
+                        last_preflight_ocr = ""
+                        while time.monotonic() < preflight_deadline:
+                            preflight_attempts += 1
+                            query_qmp(paths["qmp_sock"], screenshot)
+                            try:
+                                ocr = _guest_screen_ocr(screenshot, timeout=20, preflight_result=True)
+                            except subprocess.TimeoutExpired:
+                                if vm_proc.poll() is not None:
+                                    raise LabError("QEMU exited while guest preflight result was pending")
+                                continue
+                            normalized_ocr = " ".join(ocr.casefold().split())
+                            last_preflight_ocr = "".join(
+                                char for char in normalized_ocr if char.isalnum() or char in " .:/_-"
+                            )[:320]
+                            if ("aegis preflight pass" in normalized_ocr
+                                    and "write authorized false" in normalized_ocr
+                                    and "writes performed false" in normalized_ocr):
+                                preflight_passed = True
+                                break
+                            if "aegis preflight blocked" in normalized_ocr:
+                                raise LabError("Guest storage preflight returned BLOCKED; see guest screenshot OCR")
+                            if vm_proc.poll() is not None:
+                                raise LabError("QEMU exited before guest preflight result was observed")
+                            time.sleep(2.0)
+                        if not preflight_passed:
+                            prompt_detail = f"; OCR that triggered prompt detection: {matched_prompt_ocr}" if matched_prompt_ocr else ""
+                            detail = f"; last guest screen OCR: {last_preflight_ocr}" if last_preflight_ocr else ""
+                            raise LabError(
+                                "Guest preflight success marker not observed; no write operation was run"
+                                + prompt_detail + detail
+                            )
+                        evidence = {
+                            "qmp_running": True,
+                            "qmp_tpm_detected": True,
+                            "screenshot_captured": True,
+                            "live_environment_detected": True,
+                            "guest_preflight_executed": True,
+                            "guest_preflight_passed": True,
+                            "guest_preflight_write_authorized": False,
+                            "guest_preflight_writes_performed": False,
+                            "guest_preflight_ocr_attempts": preflight_attempts,
+                            "guest_boot_verified": True,
+                        }
                     else:
                         evidence = query_qmp(paths["qmp_sock"])
                     deadline = time.monotonic() + config.seconds
@@ -400,10 +774,10 @@ def launch(
                         time.sleep(min(.1, max(.001, deadline - time.monotonic())))
                     if vm_proc.poll() is not None:
                         raise LabError("QEMU exited during launch smoke interval")
-                    return {"status": ("LIVE_ENVIRONMENT_DETECTED" if observe_live else ("BOOT_MENU_DETECTED" if observe_boot else "LAUNCH_SMOKE_PASSED")),
+                    return {"status": ("GUEST_PREFLIGHT_PASSED" if observe_guest_preflight else ("LIVE_ENVIRONMENT_DETECTED" if observe_live else ("BOOT_MENU_DETECTED" if observe_boot else "LAUNCH_SMOKE_PASSED"))),
                             "seconds": config.seconds,
-                            "live_timeout_seconds": live_timeout_seconds if observe_live else None,
-                            "guest_boot_verified": bool((observe_boot and evidence.get("arch_boot_menu_detected")) or (observe_live and evidence.get("live_environment_detected"))),
+                            "live_timeout_seconds": live_timeout_seconds if (observe_live or observe_guest_preflight) else None,
+                            "guest_boot_verified": bool((observe_boot and evidence.get("arch_boot_menu_detected")) or (observe_live and evidence.get("live_environment_detected")) or (observe_guest_preflight and evidence.get("guest_preflight_passed"))),
                             "installation_performed": False,
                             "network_mode": network_mode,
                             "guest_network_enabled": network_mode == "user-nat-explicit",
@@ -415,9 +789,15 @@ def launch(
                         "guest_network_enabled": network_mode == "user-nat-explicit",
                         "inbound_port_forwarding_enabled": False}
         except (LabError, OSError) as exc:
-            # Preserve bounded emulator diagnostics before TemporaryDirectory cleanup.
-            # These logs contain emulator errors, not credentials or user secrets.
+            # Preserve an optional final screen before TemporaryDirectory cleanup.
+            # CI may upload this isolated live-console image to diagnose boot failures.
+            screenshot_path = locals().get("screenshot")
+            screenshot_note = _preserve_failure_screenshot(
+                screenshot_path if isinstance(screenshot_path, Path) else None
+            )
             details = []
+            if screenshot_note:
+                details.append(screenshot_note)
             for name in ("qemu.stderr", "tpm.stderr"):
                 try:
                     detail = (folder / name).read_text(encoding="utf-8", errors="replace").strip()
@@ -445,8 +825,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="capture loopback-only VNC screenshot and verify Arch UEFI boot-menu text with OCR")
     parser.add_argument("--observe-live", action="store_true",
                         help="wait for an Arch live-environment root prompt using screenshot OCR (requires verified ISO)")
+    parser.add_argument("--observe-guest-preflight", action="store_true",
+                        help="run the read-only storage gate inside Arch from a separate read-only payload ISO")
+    parser.add_argument("--guest-preflight-payload", type=Path,
+                        help="separately prepared ISO containing guest_storage_gate.py as gate.py")
     parser.add_argument("--live-timeout-seconds", type=int, default=120,
-                        help="live environment observation timeout (30–240 seconds)")
+                        help="live environment observation timeout (30–480 seconds)")
     parser.add_argument("--iso", type=Path, help="optional local Arch ISO to verify and copy into private lab")
     parser.add_argument("--iso-sha256", help="expected SHA-256 from an independently trusted Arch download/checksum source")
     parser.add_argument("--network-mode", choices=sorted(NETWORK_MODES), default="disabled",
@@ -456,11 +840,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ram-mib", type=int, default=2048)
     parser.add_argument("--cpus", type=int, default=2)
     args = parser.parse_args(argv)
-    if (args.observe_boot or args.observe_live) and not args.smoke:
+    if (args.observe_boot or args.observe_live or args.observe_guest_preflight) and not args.smoke:
         print("AEGIS lab refused: boot observation must be paired with --smoke.", file=sys.stderr)
         return 2
-    if args.observe_boot and args.observe_live:
+    if sum((args.observe_boot, args.observe_live, args.observe_guest_preflight)) > 1:
         print("AEGIS lab refused: choose only one boot observation mode.", file=sys.stderr)
+        return 2
+    if args.observe_guest_preflight and args.guest_preflight_payload is None:
+        print("AEGIS lab refused: guest preflight requires --guest-preflight-payload.", file=sys.stderr)
+        return 2
+    if args.guest_preflight_payload is not None and not args.observe_guest_preflight:
+        print("AEGIS lab refused: payload requires --observe-guest-preflight.", file=sys.stderr)
         return 2
     if args.check:
         print(json.dumps(dependencies(), indent=2, sort_keys=True))
@@ -473,9 +863,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         result = launch(LabConfig(ram_mib=args.ram_mib, cpus=args.cpus, seconds=args.seconds),
-                        args.iso, iso_sha256=args.iso_sha256, smoke=args.smoke,
-                        network_mode=args.network_mode, observe_boot=args.observe_boot,
-                        observe_live=args.observe_live, live_timeout_seconds=args.live_timeout_seconds)
+                        args.iso, iso_sha256=args.iso_sha256, payload_iso=args.guest_preflight_payload,
+                        smoke=args.smoke, network_mode=args.network_mode, observe_boot=args.observe_boot,
+                        observe_live=args.observe_live, observe_guest_preflight=args.observe_guest_preflight,
+                        live_timeout_seconds=args.live_timeout_seconds)
     except (LabError, OSError) as exc:
         print(f"AEGIS lab refused/failed: {exc}", file=sys.stderr)
         return 2
@@ -483,7 +874,7 @@ def main(argv: list[str] | None = None) -> int:
         print("AEGIS lab interrupted; disposable workspace cleaned up.", file=sys.stderr)
         return 130
     print(json.dumps(result, indent=2, sort_keys=True))
-    return 0 if args.smoke or args.observe_boot or args.observe_live or result.get("exit_code") == 0 else 1
+    return 0 if args.smoke or args.observe_boot or args.observe_live or args.observe_guest_preflight or result.get("exit_code") == 0 else 1
 
 
 if __name__ == "__main__":

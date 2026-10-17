@@ -118,6 +118,26 @@ class TransactionJournalTests(unittest.TestCase):
         with self.assertRaisesRegex(JournalError, "exceeds the supported evidence size"):
             parse_journal(b"x" * (1024 * 1024 + 1))
 
+    def test_append_cannot_grow_journal_past_configured_limit(self):
+        from unittest.mock import patch
+        self.journal.append("phase_intent", phase="preflight", status="STARTED")
+        existing_size = self.path.stat().st_size
+        with patch("lab.transaction_journal.MAX_JOURNAL_BYTES", existing_size):
+            with self.assertRaisesRegex(JournalError, "Appending would exceed"):
+                self.journal.append("phase_result", phase="preflight", status="SUCCEEDED")
+        self.assertEqual(self.path.stat().st_size, existing_size)
+        self.assertEqual(len(self.journal.read()), 1)
+
+    def test_oversized_journal_file_is_rejected_by_read_and_append(self):
+        self.path.write_bytes(b"x" * (1024 * 1024 + 1))
+        os.chmod(self.path, 0o600)
+        with self.assertRaisesRegex(JournalError, "exceeds the supported evidence size"):
+            self.journal.read()
+        with self.assertRaisesRegex(JournalError, "exceeds the supported evidence size"):
+            self.journal.append("phase_intent", phase="preflight", status="STARTED")
+        self.assertEqual(self.path.stat().st_size, 1024 * 1024 + 1)
+
+
     def test_symlink_journal_is_rejected(self):
         target = Path(self.temp.name) / "target"
         target.write_text("")
@@ -129,6 +149,14 @@ class TransactionJournalTests(unittest.TestCase):
         with self.assertRaisesRegex(JournalError, "allowlisted"):
             self.journal.append("phase_intent", phase="preflight", status="STARTED",
                                 note_code="credential=secret")
+
+    def test_journal_directory_must_be_searchable(self):
+        os.chmod(self.temp.name, 0o600)
+        try:
+            with self.assertRaisesRegex(JournalError, "owned by the current user and private"):
+                self.journal.append("phase_intent", phase="preflight", status="STARTED")
+        finally:
+            os.chmod(self.temp.name, 0o700)
 
     def test_file_permissions_are_private(self):
         self.journal.append("phase_intent", phase="preflight", status="STARTED")

@@ -8,14 +8,20 @@ def inventory():
     return {"disks": [
         {"path": "/dev/nvme0n1", "size": 1000 * 10**9, "type": "disk", "serial": "PRIMARY-001",
          "model": "Example NVMe", "tran": "nvme", "rm": False, "ro": False, "hotplug": False, "mountpoints": [None],
-         "children": [{"path": "/dev/nvme0n1p1", "fstype": "vfat", "mountpoints": []}]},
+         "children": [{"path": "/dev/nvme0n1p1", "fstype": "vfat", "mountpoints": [], "children": []}]},
         {"path": "/dev/sdb", "size": 2000 * 10**9, "type": "disk", "serial": "SECONDARY-002",
          "model": "Example SATA", "tran": "sata", "rm": False, "ro": False, "hotplug": False, "mountpoints": [None],
-         "children": [{"path": "/dev/sdb1", "fstype": "crypto_LUKS", "mountpoints": []}]},
+         "children": [{"path": "/dev/sdb1", "fstype": "crypto_LUKS", "mountpoints": [], "children": []}]},
     ]}
 
 
 class PlannerTests(unittest.TestCase):
+    def test_malformed_option_types_raise_plan_error_not_type_error(self):
+        for kwargs in ({"secondary_action": []}, {"filesystem": {}}):
+            with self.subTest(kwargs=kwargs):
+                with self.assertRaises(PlanError):
+                    build_storage_plan(inventory(), "/dev/nvme0n1", **kwargs)
+
     def test_secondary_preserved_by_default(self):
         plan = build_storage_plan(inventory(), "/dev/nvme0n1", "/dev/sdb")
         self.assertFalse(plan["execution_enabled"])
@@ -54,10 +60,12 @@ class PlannerTests(unittest.TestCase):
 
     def test_report_escapes_html_and_redacts_secrets(self):
         plan = build_storage_plan(inventory(), "/dev/nvme0n1")
-        plan["tpm_pin"] = "12345"
+        secret = "AEGIS-TEST-SECRET-TPM-PIN-91A7"
+        plan["tpm_pin"] = secret
         plan["warnings"].append("bad <script>alert('x')</script>")
         output = html_report(plan)
-        self.assertNotIn("12345", output)
+        self.assertNotIn(secret, output)
+        self.assertIn("&quot;tpm_pin&quot;: &quot;[REDACTED]&quot;", output)
         self.assertNotIn("<script>", output)
         self.assertIn("&lt;script&gt;", output)
         self.assertEqual(public_view({"password": "pw"})["password"], "[REDACTED]")
@@ -98,6 +106,63 @@ class PlannerTests(unittest.TestCase):
         })
         with self.assertRaises(PlanError):
             build_storage_plan(data, "/dev/nvme0n1")
+
+    def test_malformed_device_paths_block_plan(self):
+        for path in ("/dev/nvme0n1\n", "/dev//sda", "/dev/../sda", "/dev/sda;echo"):
+            with self.subTest(path=path):
+                data = inventory()
+                data["disks"][0]["path"] = path
+                with self.assertRaises(PlanError):
+                    build_storage_plan(data, path)
+
+    def test_control_characters_in_stable_identifiers_block_plan(self):
+        data = inventory()
+        data["disks"][0]["serial"] = "PRIMARY-001\nforged"
+        with self.assertRaises(PlanError):
+            build_storage_plan(data, "/dev/nvme0n1")
+
+    def test_missing_mountpoint_observations_fail_closed(self):
+        data = inventory()
+        data["disks"][0].pop("mountpoints")
+        with self.assertRaises(PlanError):
+            build_storage_plan(data, "/dev/nvme0n1")
+
+        data = inventory()
+        data["disks"][0]["children"][0].pop("mountpoints")
+        with self.assertRaises(PlanError):
+            build_storage_plan(data, "/dev/nvme0n1")
+
+    def test_missing_disk_or_nested_child_topology_fails_closed(self):
+        cases = [
+            ("disk", None),
+            ("child", None),
+            ("grandchild", None),
+        ]
+        for target, _ in cases:
+            with self.subTest(target=target):
+                data = inventory()
+                if target == "disk":
+                    data["disks"][0].pop("children")
+                elif target == "child":
+                    data["disks"][0]["children"][0].pop("children")
+                else:
+                    data["disks"][0]["children"][0]["children"] = [{"path": "/dev/nvme0n1p2", "mountpoints": []}]
+                with self.assertRaises(PlanError):
+                    build_storage_plan(data, "/dev/nvme0n1")
+
+    def test_malformed_partition_observations_fail_closed(self):
+        cases = [
+            {"mountpoints": {"root": "/"}},
+            {"mountpoints": ["   "]},
+            {"mountpoints": [42]},
+            {"children": {"unexpected": "mapping"}},
+        ]
+        for change in cases:
+            with self.subTest(change=change):
+                data = inventory()
+                data["disks"][0]["children"][0].update(change)
+                with self.assertRaises(PlanError):
+                    build_storage_plan(data, "/dev/nvme0n1")
 
     def test_malformed_disk_entry_blocks_plan(self):
         data = inventory()
