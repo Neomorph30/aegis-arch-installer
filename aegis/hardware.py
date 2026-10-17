@@ -70,9 +70,9 @@ def read_disks() -> list[dict[str, Any]]:
         node, depth = stack.pop()
         visited += 1
         if depth > 16 or visited > 4096:
-            # Do not silently truncate excessive topology. Any unnormalized
-            # descendants remain incomplete and the safety validators reject them.
-            break
+            raise HardwareInspectionError(
+                "lsblk device topology exceeds safety limits; refusing incomplete inventory"
+            )
         if not isinstance(node, dict):
             continue
         if "children" not in node:
