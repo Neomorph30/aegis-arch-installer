@@ -117,6 +117,44 @@ class ProposalOutputHardeningTests(unittest.TestCase):
                 self.assertNotIn(status, result.stdout + result.stderr)
                 self.assertNotIn("CANARY_PASSWORD_71c2", result.stdout + result.stderr)
 
+    def test_cli_rejects_missing_and_malformed_evidence_before_output_creation(self):
+        cases = (
+            ("missing", lambda data: data.pop("tests", None)),
+            ("not-list", lambda data: data.__setitem__("tests", {"name": "bad", "result": "SKIPPED"})),
+            ("empty-name", lambda data: data.__setitem__("tests", [{"name": " ", "result": "SKIPPED"}])),
+            ("contradictory", lambda data: data.__setitem__("tests", [{"name": "done", "result": "PASSED"}])),
+        )
+        for label, mutate in cases:
+            with self.subTest(case=label), tempfile.TemporaryDirectory() as directory:
+                proposal = self._valid_proposal(directory)
+                data = json.loads(proposal.read_text(encoding="utf-8"))
+                data["warnings"] = ["password=CLI_ERROR_CANARY_1"]
+                mutate(data)
+                proposal.write_text(json.dumps(data), encoding="utf-8")
+                output = Path(directory) / "report.html"
+                result = cli("report", "--plan", str(proposal), "--output", str(output))
+                self.assertEqual(result.returncode, 2, result.stdout)
+                self.assertFalse(output.exists())
+                self.assertNotIn("CLI_ERROR_CANARY_1", result.stdout + result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_cli_report_redacts_quoted_and_pem_secrets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            proposal = self._valid_proposal(directory)
+            data = json.loads(proposal.read_text(encoding="utf-8"))
+            data["warnings"].append(
+                'password="CLI_QUOTED_CANARY" token=\'CLI_TOKEN_CANARY\' '
+                '-----BEGIN PRIVATE KEY-----\\nCLI_PEM_CANARY\\n-----END PRIVATE KEY-----'
+            )
+            proposal.write_text(json.dumps(data), encoding="utf-8")
+            output = Path(directory) / "report.html"
+            result = cli("report", "--plan", str(proposal), "--output", str(output))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            rendered = output.read_text(encoding="utf-8")
+            for secret in ("CLI_QUOTED_CANARY", "CLI_TOKEN_CANARY", "CLI_PEM_CANARY"):
+                with self.subTest(secret=secret):
+                    self.assertNotIn(secret, rendered)
+
     def test_cli_rejects_forged_verification_before_overwriting_existing_output(self):
         with tempfile.TemporaryDirectory() as directory:
             proposal = self._valid_proposal(directory)
