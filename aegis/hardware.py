@@ -97,8 +97,9 @@ def _active_swap_devices() -> set[tuple[int, int]] | None:
         try:
             info = os.stat(fields[0])
         except OSError:
-            # Swap files are not block devices; they cannot match an lsblk node.
-            continue
+            # An active swap entry that cannot be resolved is unknown, not safe.
+            # Returning None causes every affected device's swap state to fail closed.
+            return None
         if stat.S_ISBLK(info.st_mode):
             devices.add((os.major(info.st_rdev), os.minor(info.st_rdev)))
     return devices
