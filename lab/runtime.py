@@ -409,18 +409,25 @@ def press_qmp_enter(path: Path) -> None:
                 raise LabError("QMP Enter key failed")
 
 
+def _qmp_keycodes(char: str) -> list[str]:
+    """Return QMP keycodes for one approved guest character on a US keyboard."""
+    qcodes = {
+        " ": ["spc"], "/": ["slash"], ".": ["dot"], "-": ["minus"],
+        ";": ["semicolon"], "&": ["shift", "7"],
+    }
+    if char in qcodes:
+        return qcodes[char]
+    if char.isascii() and (char.islower() or char.isdigit()):
+        return [char]
+    raise LabError("Guest preflight command contains unsupported characters")
+
+
 def type_qmp_command(path: Path, command: str) -> None:
     """Type only the fixed guest preflight command through QMP; no host shell is invoked."""
     if command != GUEST_PREFLIGHT_COMMAND:
         raise LabError("Only the fixed read-only guest preflight command may be typed")
-    qcodes = {
-        " ": "spc", "/": "slash", ".": "dot", "-": "minus", ";": "semicolon", "&": "shift-7",
-    }
-    if not command or any(
-        not (char.isascii() and (char.islower() or char.isdigit() or char in qcodes))
-        for char in command
-    ):
-        raise LabError("Guest preflight command contains unsupported characters")
+    # Validate every character before connecting to QMP.
+    key_sequences = [_qmp_keycodes(char) for char in command]
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
         client.settimeout(3.0)
         client.connect(str(path))
@@ -449,11 +456,13 @@ def type_qmp_command(path: Path, command: str) -> None:
                     raise LabError("QMP input command did not return successfully")
                 return reply["return"]
             cmd("qmp_capabilities")
-            for char in command:
-                key = qcodes.get(char, char)
-                cmd("send-key", {"keys": [{"type": "qcode", "data": key}], "hold-time": 50})
-                # Wait for key release before sending the next key; overlapping
-                # QMP send-key calls can turn characters into unintended chords.
+            for keys in key_sequences:
+                cmd("send-key", {
+                    "keys": [{"type": "qcode", "data": key} for key in keys],
+                    "hold-time": 50,
+                })
+                # Shifted symbols must be sent as a simultaneous key chord.
+                # Wait for release before sending the next character.
                 time.sleep(0.08)
             cmd("send-key", {"keys": [{"type": "qcode", "data": "ret"}], "hold-time": 80})
 
