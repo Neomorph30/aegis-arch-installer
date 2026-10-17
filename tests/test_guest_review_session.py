@@ -7,8 +7,14 @@ import tempfile
 import unittest
 
 from lab.guest_probe import GuestProbeError
-from lab.guest_review_session import run_review_session
-from lab.transaction_journal import TransactionJournal
+try:
+    from lab.guest_review_session import run_review_session
+    from lab.transaction_journal import TransactionJournal
+except ModuleNotFoundError as exc:
+    if exc.name != "fcntl":
+        raise
+    run_review_session = None  # type: ignore[assignment]
+    TransactionJournal = None  # type: ignore[assignment]
 
 
 def sample():
@@ -27,6 +33,7 @@ def sample():
     }
 
 
+@unittest.skipIf(run_review_session is None, "Requires POSIX file-locking semantics (fcntl)")
 class GuestReviewSessionTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

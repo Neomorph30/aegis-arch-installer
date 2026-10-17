@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 
@@ -45,6 +46,7 @@ class WorkflowPlanCLITests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    @unittest.skipUnless(sys.platform.startswith("linux") and hasattr(os, "O_NOFOLLOW"), "Requires Linux O_NOFOLLOW file-open flag")
     def test_valid_files_emit_review_only_plan(self):
         from contextlib import redirect_stdout, redirect_stderr
         from io import StringIO
@@ -57,6 +59,7 @@ class WorkflowPlanCLITests(unittest.TestCase):
         self.assertFalse(result["execution_enabled"])
         self.assertFalse(result["disk_changes_performed"])
 
+    @unittest.skipUnless(sys.platform.startswith("linux") and hasattr(os, "O_NOFOLLOW"), "Requires Linux O_NOFOLLOW file-open flag")
     def test_changed_observation_fails_closed(self):
         from contextlib import redirect_stdout, redirect_stderr
         from io import StringIO
@@ -71,6 +74,7 @@ class WorkflowPlanCLITests(unittest.TestCase):
         self.assertEqual(result["status"], "BLOCKED")
         self.assertFalse(result["disk_changes_performed"])
 
+    @unittest.skipUnless(sys.platform.startswith("linux") and hasattr(os, "O_NOFOLLOW"), "Requires Linux unprivileged symlinks and O_NOFOLLOW")
     def test_symlink_input_is_rejected(self):
         from contextlib import redirect_stdout, redirect_stderr
         from io import StringIO
@@ -83,6 +87,7 @@ class WorkflowPlanCLITests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(result["status"], "BLOCKED")
 
+    @unittest.skipUnless(sys.platform.startswith("linux") and hasattr(os, "O_NOFOLLOW"), "Requires Linux O_NOFOLLOW file-open flag")
     def test_non_object_json_is_rejected(self):
         from contextlib import redirect_stdout, redirect_stderr
         from io import StringIO

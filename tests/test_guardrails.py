@@ -4,6 +4,7 @@ import ast
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -44,6 +45,7 @@ class GuardrailTests(unittest.TestCase):
         with self.assertRaises(hardware.HardwareInspectionError):
             hardware._run_readonly(["lsblk", "--output", "PATH"])
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Requires Linux file permission bits (mode 0600)")
     def test_reports_exclusively_create_mode_600_files(self):
         with tempfile.TemporaryDirectory() as d:
             destination = Path(d) / "plan.json"
@@ -53,6 +55,7 @@ class GuardrailTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 _write_json(str(destination), {"x": True})
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Requires Linux unprivileged symlink support")
     def test_report_output_rejects_existing_symlink(self):
         with tempfile.TemporaryDirectory() as d:
             protected = Path(d) / "protected.txt"
