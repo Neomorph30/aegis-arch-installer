@@ -157,6 +157,11 @@ def run_check(root: Path) -> list[str]:
                 errors.append(f"{display}: checkout credentials must not persist")
             if "tools/security_lint.py" not in data:
                 errors.append(f"{display}: preview guardrail must run in CI")
+            if workflow.name == "arch-live-boot.yml":
+                if "--network-mode disabled" not in data:
+                    errors.append(f"{display}: live preflight must run with guest networking disabled")
+                if "--network-mode user-nat-explicit" in data:
+                    errors.append(f"{display}: live preflight must not enable guest NAT")
     return errors
 
 
