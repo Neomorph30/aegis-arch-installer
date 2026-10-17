@@ -56,11 +56,14 @@ in `RELEASE_GATES.md` are independently reviewed and satisfied.
 ## Current evidence and limits
 
 Unit tests for the pure gate use synthetic JSON only and never open block devices.
-The Arch live-boot CI now verifies the official ISO SHA-256, detects the Arch
-live environment and root prompt from the guest display, and confirms QEMU and
-the virtual TPM remain running with guest networking disabled. This verifies
-boot into the live environment, not execution of the Python guest preflight.
-The preflight has passed synthetic and mocked-observer tests, but still must be
-executed inside the disposable guest before any writer is considered. Arch
-installation, encryption and recovery remain unverified. A successful preflight
-result must never be described as an installation or write authorization.
+The confirmed Arch live-boot CI run
+https://github.com/Neomorph30/aegis-arch-installer/actions/runs/39063685702
+verifies the official ISO SHA-256, boots the Arch live environment, executes the
+read-only Python guest storage preflight inside the disposable guest, and
+confirms the preflight passed with `write_authorized=false` and
+`writes_performed=false`. The run uses disposable file-backed virtual disks,
+keeps guest networking disabled, and does not perform an installation. This is
+evidence for live boot and read-only preflight only—not for partitioning,
+formatting, encryption, package installation, crash recovery, or booting an
+installed guest. Those tests remain outstanding. A successful preflight result
+must never be described as installation success or write authorization.
