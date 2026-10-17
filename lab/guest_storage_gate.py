@@ -37,7 +37,7 @@ def validate_lab_primary(observation: dict[str, Any]) -> dict[str, Any]:
 
     all_nodes: list[dict[str, Any]] = []
     paths: set[str] = set()
-    kernel_identities: set[str] = set()
+    kernel_identities: set[tuple[int, int]] = set()
     serial_matches: list[dict[str, Any]] = []
 
     def visit(node: Any, depth: int = 0) -> None:
@@ -64,9 +64,11 @@ def validate_lab_primary(observation: dict[str, Any]) -> dict[str, Any]:
         major_minor = node.get("major_minor")
         if not isinstance(major_minor, str) or not _MAJOR_MINOR.fullmatch(major_minor):
             raise GuestStorageGateError(f"Missing or malformed kernel device identity on {path}")
-        if major_minor in kernel_identities:
+        major_text, minor_text = major_minor.split(":", 1)
+        identity = (int(major_text), int(minor_text))
+        if identity in kernel_identities:
             raise GuestStorageGateError("Duplicate kernel major/minor identity; device paths may alias the same block device")
-        kernel_identities.add(major_minor)
+        kernel_identities.add(identity)
         paths.add(path)
         all_nodes.append(node)
         if kind == "disk" and node.get("serial") == PRIMARY_SERIAL:
