@@ -64,14 +64,13 @@ jobs:
           mkdir -m 700 "$RUNNER_TEMP/guest-payload"
           cp lab/guest_storage_gate.py "$RUNNER_TEMP/guest-payload/gate.py"
           xorriso -as mkisofs -quiet -o "$RUNNER_TEMP/guest-preflight.iso" "$RUNNER_TEMP/guest-payload"
-          # Explicit user-mode NAT is guest-only: no bridge or host-device passthrough.
-          # This is lab networking only; it does not enable installer network setup.
+          # The live preflight needs no networking; keep the guest NIC disabled.
           python -m lab --smoke \
             --observe-guest-preflight \
             --guest-preflight-payload "$RUNNER_TEMP/guest-preflight.iso" \
             --live-timeout-seconds 480 \
             --seconds 3 \
-            --network-mode user-nat-explicit \
+            --network-mode disabled \
             --iso "$ISO_PATH" \
             --iso-sha256 "$ARCH_ISO_SHA256"
       - name: Upload final guest screen when boot verification fails
