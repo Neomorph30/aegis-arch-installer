@@ -5,7 +5,8 @@ import unittest
 from unittest.mock import patch
 from subprocess import CompletedProcess
 
-from aegis.hardware import HardwareInspectionError, _sysfs_block_node, read_disks
+from aegis.hardware import (HardwareInspectionError, _sysfs_block_node,
+                            read_assessment_observation, read_disks)
 
 
 class HardwareTests(unittest.TestCase):
@@ -38,6 +39,35 @@ class HardwareTests(unittest.TestCase):
         })()
         with self.assertRaises(OSError):
             _sysfs_block_node("/tmp/not-a-device")
+
+    def test_live_assessment_fails_closed_on_excessive_topology(self):
+        root = {"path": "/dev/vda", "type": "disk", "children": []}
+        cursor = root
+        for index in range(18):
+            child = {"path": f"/dev/vda{index + 1}", "type": "part", "children": []}
+            cursor["children"].append(child)
+            cursor = child
+        with patch("aegis.hardware.read_disks", return_value=[root]), \
+             patch("aegis.hardware._active_swap_devices") as swap, \
+             patch("aegis.hardware._enrich_block_node") as enrich:
+            result = read_assessment_observation()
+        self.assertTrue(result["devices"][0]["ambiguous"])
+        self.assertIsNone(result["devices"][0]["holders"])
+        self.assertIsNone(result["devices"][0]["active_swap"])
+        swap.assert_not_called()
+        enrich.assert_not_called()
+
+    def test_live_assessment_fails_closed_on_excessive_node_count(self):
+        root = {"path": "/dev/vda", "type": "disk",
+                "children": [{"path": f"/dev/vda{i}", "type": "part", "children": []}
+                             for i in range(4097)]}
+        with patch("aegis.hardware.read_disks", return_value=[root]), \
+             patch("aegis.hardware._active_swap_devices") as swap, \
+             patch("aegis.hardware._enrich_block_node") as enrich:
+            result = read_assessment_observation()
+        self.assertTrue(result["devices"][0]["ambiguous"])
+        swap.assert_not_called()
+        enrich.assert_not_called()
 
     @patch("aegis.hardware.shutil.which", return_value=None)
     def test_lsblk_required(self, _which):
