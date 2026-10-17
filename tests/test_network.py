@@ -151,6 +151,20 @@ class NetworkTests(unittest.TestCase):
         self.assertIn("Wi-Fi setup unavailable", errors.getvalue())
         self.assertNotIn("Traceback", errors.getvalue())
 
+    @patch("aegis.cli.interactive_preflight")
+    @patch("aegis.cli.sys.stdout.isatty", return_value=False)
+    @patch("aegis.cli.sys.stdin.isatty", return_value=False)
+    def test_cli_connect_noninteractive_fails_before_network_setup(self, _stdin, _stdout, interactive):
+        from aegis.cli import main
+        errors = io.StringIO()
+        with patch("sys.stderr", errors), patch("builtins.input") as request:
+            code = main(["network", "--connect"])
+        self.assertEqual(code, 2)
+        interactive.assert_not_called()
+        request.assert_not_called()
+        self.assertNotIn("Traceback", errors.getvalue())
+        self.assertIn("local terminal", errors.getvalue())
+
     @patch("aegis.cli.network_preflight")
     def test_readonly_check_does_not_prompt(self, preflight):
         from aegis.cli import main
