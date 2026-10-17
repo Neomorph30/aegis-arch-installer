@@ -58,6 +58,13 @@ class GuestInstallSpecTests(unittest.TestCase):
         with self.assertRaisesRegex(InstallSpecError, "serial mismatch"):
             build_guest_install_spec(obs)
 
+    def test_unexpected_root_block_device_type_is_rejected(self):
+        obs = observation()
+        obs["devices"].append({"path": "/dev/mapper/host-root", "type": "mpath",
+                               "read_only": True})
+        with self.assertRaisesRegex(InstallSpecError, "Unexpected block-device root type"):
+            build_guest_install_spec(obs)
+
     def test_extra_disk_rejected(self):
         obs = observation()
         extra = copy.deepcopy(obs["devices"][0])
