@@ -356,9 +356,10 @@ class StorageAndProbeTests(unittest.TestCase):
         self.assertEqual(read_disks()[0]["children"], malformed)
 
     def test_unresolvable_active_swap_entry_is_unknown_not_safe(self):
-        with patch("aegis.hardware.Path.read_text",
-                   return_value="Filename Type Size Used Priority\\n/dev/missing-swap partition 1024 0 -2\\n"), \\
-             patch("aegis.hardware.os.stat", side_effect=OSError("device disappeared")):
+        with patch(
+            "aegis.hardware.Path.read_text",
+            return_value="Filename Type Size Used Priority\n/dev/missing-swap partition 1024 0 -2\n",
+        ), patch("aegis.hardware.os.stat", side_effect=OSError("device disappeared")):
             self.assertIsNone(_active_swap_devices())
 
     def test_read_disks_rejects_excessive_topology_instead_of_truncating(self):
