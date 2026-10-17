@@ -72,8 +72,10 @@ def assess_phase_request(
         if not isinstance(digest, str) or not DIGEST_RE.fullmatch(digest):
             raise PhaseGateError("Review plan digest is missing or malformed")
         phases = plan.get("phases")
-        if not isinstance(phases, list) or [p.get("id") for p in phases if isinstance(p, dict)] != list(PHASE_ORDER):
-            raise PhaseGateError("Review plan phases are missing, unknown, or out of order")
+        if (not isinstance(phases, list)
+                or any(not isinstance(item, dict) for item in phases)
+                or [item.get("id") for item in phases] != list(PHASE_ORDER)):
+            raise PhaseGateError("Review plan phases are malformed, missing, unknown, or out of order")
         for item in phases:
             phase_name = item["id"]
             if (item.get("mutating") is not (phase_name in MUTATING_PHASES)
