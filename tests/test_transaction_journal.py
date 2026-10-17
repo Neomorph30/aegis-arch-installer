@@ -4,17 +4,24 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 
-from lab.transaction_journal import (
-    JournalError,
-    TransactionJournal,
-    assess_recovery,
-    parse_journal,
-)
+try:
+    from lab.transaction_journal import (
+        JournalError,
+        TransactionJournal,
+        assess_recovery,
+        parse_journal,
+    )
+except ModuleNotFoundError as exc:
+    if exc.name != "fcntl":
+        raise
+    JournalError = TransactionJournal = assess_recovery = parse_journal = None
 
 
+@unittest.skipIf(TransactionJournal is None, "Requires POSIX file-locking semantics (fcntl)")
 class TransactionJournalTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
