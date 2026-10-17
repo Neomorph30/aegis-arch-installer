@@ -324,7 +324,7 @@ class GuestStorageGateTests(unittest.TestCase):
 
     @patch("pathlib.Path.iterdir", return_value=[])
     @patch("pathlib.Path.read_text", return_value=(
-        "Filename Type Size Used Priority\\n/dev/vda partition 1024 0 -2\\n"
+        "Filename Type Size Used Priority\n/dev/vda partition 1024 0 -2\n"
     ))
     @patch("os.stat")
     @patch("subprocess.run")
