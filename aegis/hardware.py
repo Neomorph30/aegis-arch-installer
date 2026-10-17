@@ -138,9 +138,18 @@ def read_assessment_observation() -> dict[str, Any]:
                 disk["holders"] = None
                 disk["active_swap"] = None
             return {"devices": disks}
-        children = node.get("children")
+        if not isinstance(node, dict):
+            # Preserve malformed entries for the assessor, which will block them.
+            continue
+        # With --tree and NAME selected, lsblk omits "children" on genuine leaf
+        # devices. Normalize that documented shape here; fixtures still must
+        # provide explicit topology, and an explicitly malformed value is retained
+        # so assess_inventory can reject it rather than silently treating it as empty.
+        if "children" not in node:
+            node["children"] = []
+        children = node["children"]
         if isinstance(children, list):
-            stack.extend((child, depth + 1) for child in children if isinstance(child, dict))
+            stack.extend((child, depth + 1) for child in children)
 
     swap_devices = _active_swap_devices()
     for disk in disks:
