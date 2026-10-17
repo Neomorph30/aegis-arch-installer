@@ -134,26 +134,28 @@ class GuestPreflightLauncherTests(unittest.TestCase):
         payload_drive = next(arg for arg in qemu if "id=guestpayload" in arg and arg.startswith("if=none"))
         self.assertIn("readonly=on", payload_drive)
 
-    def test_guest_preflight_requires_explicit_payload(self):
+    def test_guest_preflight_requires_verified_arch_iso(self):
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
             result = main(["--smoke", "--observe-guest-preflight"])
         self.assertEqual(result, 2)
-        self.assertIn("--guest-preflight-payload", stderr.getvalue())
+        self.assertIn("--iso and --iso-sha256", stderr.getvalue())
 
-    def test_guest_payload_requires_explicit_preflight_mode(self):
+    def test_guest_preflight_does_not_accept_caller_supplied_payload(self):
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
-            result = main(["--smoke", "--guest-preflight-payload", "/tmp/payload.iso"])
+            result = main([
+                "--smoke", "--observe-guest-preflight",
+                "--guest-preflight-payload", "/tmp/untrusted.iso",
+            ])
         self.assertEqual(result, 2)
-        self.assertIn("--observe-guest-preflight", stderr.getvalue())
+        self.assertIn("unrecognized arguments", stderr.getvalue())
 
     def test_guest_preflight_cannot_be_combined_with_live_only_observation(self):
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
             result = main([
                 "--smoke", "--observe-live", "--observe-guest-preflight",
-                "--guest-preflight-payload", "/tmp/payload.iso",
             ])
         self.assertEqual(result, 2)
         self.assertIn("choose only one boot observation mode", stderr.getvalue())
