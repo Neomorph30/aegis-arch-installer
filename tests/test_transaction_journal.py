@@ -152,8 +152,11 @@ class TransactionJournalTests(unittest.TestCase):
 
     def test_journal_directory_must_be_searchable(self):
         os.chmod(self.temp.name, 0o600)
-        with self.assertRaisesRegex(JournalError, "owned by the current user and private"):
-            self.journal.append("phase_intent", phase="preflight", status="STARTED")
+        try:
+            with self.assertRaisesRegex(JournalError, "owned by the current user and private"):
+                self.journal.append("phase_intent", phase="preflight", status="STARTED")
+        finally:
+            os.chmod(self.temp.name, 0o700)
 
     def test_file_permissions_are_private(self):
         self.journal.append("phase_intent", phase="preflight", status="STARTED")
