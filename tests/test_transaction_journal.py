@@ -118,6 +118,16 @@ class TransactionJournalTests(unittest.TestCase):
         with self.assertRaisesRegex(JournalError, "exceeds the supported evidence size"):
             parse_journal(b"x" * (1024 * 1024 + 1))
 
+    def test_oversized_journal_file_is_rejected_by_read_and_append(self):
+        self.path.write_bytes(b"x" * (1024 * 1024 + 1))
+        os.chmod(self.path, 0o600)
+        with self.assertRaisesRegex(JournalError, "exceeds the supported evidence size"):
+            self.journal.read()
+        with self.assertRaisesRegex(JournalError, "exceeds the supported evidence size"):
+            self.journal.append("phase_intent", phase="preflight", status="STARTED")
+        self.assertEqual(self.path.stat().st_size, 1024 * 1024 + 1)
+
+
     def test_symlink_journal_is_rejected(self):
         target = Path(self.temp.name) / "target"
         target.write_text("")
