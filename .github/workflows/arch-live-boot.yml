@@ -5,6 +5,8 @@ on:
   pull_request:
     paths:
       - "lab/**"
+      - "docs/GUEST_INSTALL_ENGINE.md"
+      - "docs/RELEASE_GATES.md"
       - ".github/workflows/arch-live-boot.yml"
 
 permissions:
