@@ -96,6 +96,7 @@ def validate_lab_primary(observation: dict[str, Any]) -> dict[str, Any]:
     if {node.get("serial") for node in roots} != {PRIMARY_SERIAL, SECONDARY_SERIAL}:
         raise GuestStorageGateError("Root disks must have exactly the two fixed lab serials")
     secondary = secondary_matches[0]
+    target = serial_matches[0]
     if target.get("path") != "/dev/vda" or secondary.get("path") != "/dev/vdb":
         raise GuestStorageGateError("Lab disks must use the fixed /dev/vda primary and /dev/vdb secondary paths")
     if secondary.get("size") != SECONDARY_BYTES or secondary.get("ro") not in (True, 1):
@@ -103,7 +104,6 @@ def validate_lab_primary(observation: dict[str, Any]) -> dict[str, Any]:
     if secondary.get("rm") not in (False, 0):
         raise GuestStorageGateError("Removable secondary lab disks are forbidden")
 
-    target = serial_matches[0]
     if target.get("type") != "disk" or target.get("size") != PRIMARY_BYTES:
         raise GuestStorageGateError("Lab primary disk type or exact capacity does not match")
     if target.get("ro") not in (False, 0):
