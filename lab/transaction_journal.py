@@ -270,7 +270,7 @@ class TransactionJournal:
             os.fsync(fd)
             if created:
                 # Persist the new directory entry as well as the journal contents.
-                dir_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | getattr(os, "O_DIRECTORY", 0)
+                dir_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_DIRECTORY
                 dir_fd = os.open(self.path.parent, dir_flags)
                 try:
                     os.fsync(dir_fd)
