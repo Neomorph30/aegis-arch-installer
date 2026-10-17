@@ -26,7 +26,7 @@ SECRET_ASSIGNMENT = re.compile(
     r"(?i)(?<![a-z0-9])(luks[_-]?recovery[_-]?key|password|passphrase|"
     r"secret|credential|keyfile|token|recovery[_-]?key|tpm[_-]?pin|"
     r"private[_-]?key|api[_-]?key)(?![a-z0-9])"
-    r"\\s*([=:])\\s*(\"[^\"]*\"|'[^']*'|[^\\s,;]+)"
+    r"\s*([=:])\s*(\"[^\"]*\"|'[^']*'|[^\s,;]+)"
 )
 PEM_PRIVATE_KEY = re.compile(
     r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----.*?"
