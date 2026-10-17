@@ -122,8 +122,26 @@ def _enrich_block_node(node: dict[str, Any], swap_devices: set[tuple[int, int]] 
 
 
 def read_assessment_observation() -> dict[str, Any]:
-    """Build a live, read-only observation for the conservative inventory assessor."""
+    """Build a bounded, live read-only observation for the inventory assessor."""
     disks = read_disks()
+
+    # Bound traversal before recursive enrichment. Malformed or excessive topology
+    # must fail closed rather than consume unbounded time or Python stack depth.
+    stack = [(disk, 0) for disk in disks]
+    visited = 0
+    while stack:
+        node, depth = stack.pop()
+        visited += 1
+        if depth > 16 or visited > 4096:
+            for disk in disks:
+                disk["ambiguous"] = True
+                disk["holders"] = None
+                disk["active_swap"] = None
+            return {"devices": disks}
+        children = node.get("children")
+        if isinstance(children, list):
+            stack.extend((child, depth + 1) for child in children if isinstance(child, dict))
+
     swap_devices = _active_swap_devices()
     for disk in disks:
         _enrich_block_node(disk, swap_devices)
