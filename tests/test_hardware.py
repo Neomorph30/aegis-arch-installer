@@ -369,11 +369,13 @@ class StorageAndProbeTests(unittest.TestCase):
             child = {"path": f"/dev/vda{index + 1}", "type": "part", "children": []}
             cursor["children"].append(child)
             cursor = child
-        with patch("aegis.hardware.shutil.which", return_value="/usr/bin/lsblk"), \\
-             patch("aegis.hardware.subprocess.run",
-                   return_value=CompletedProcess([], 0, json.dumps({"blockdevices": [root]}), "")):
-            with self.assertRaisesRegex(HardwareInspectionError, "topology exceeds safety limits"):
-                read_disks()
+        with patch("aegis.hardware.shutil.which", return_value="/usr/bin/lsblk"):
+            with patch(
+                "aegis.hardware.subprocess.run",
+                return_value=CompletedProcess([], 0, json.dumps({"blockdevices": [root]}), ""),
+            ):
+                with self.assertRaisesRegex(HardwareInspectionError, "topology exceeds safety limits"):
+                    read_disks()
 
     @patch("aegis.hardware.os.stat")
     def test_sysfs_holder_lookup_uses_kernel_major_minor_not_device_basename(self, stat_call):
