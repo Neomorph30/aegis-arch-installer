@@ -94,6 +94,8 @@ def build_guest_install_spec(observation: dict[str, Any]) -> dict[str, Any]:
             if not major_text.isdecimal() or not minor_text.isdecimal():
                 raise InstallSpecError("Kernel major/minor identity is missing or malformed")
             identity = (int(major_text), int(minor_text))
+            if identity_text != f"{identity[0]}:{identity[1]}":
+                raise InstallSpecError("Kernel major/minor identity is not canonical")
             if identity in kernel_identities:
                 raise InstallSpecError("Duplicate kernel major/minor identity; device paths may alias")
             kernel_identities.add(identity)
