@@ -4,7 +4,12 @@ from __future__ import annotations
 import json
 import unittest
 
-from lab.execution_gate import assess_phase_request, confirmation_phrase
+try:
+    from lab.execution_gate import assess_phase_request, confirmation_phrase
+except ModuleNotFoundError as exc:
+    if exc.name != "fcntl":
+        raise
+    assess_phase_request = confirmation_phrase = None
 from lab.guest_preflight import run_preflight
 from lab.workflow_plan import build_review_plan
 
@@ -26,6 +31,7 @@ def observation():
     }
 
 
+@unittest.skipIf(assess_phase_request is None, "Requires POSIX file-locking semantics (fcntl)")
 class ExecutionGateTests(unittest.TestCase):
     def setUp(self):
         self.observed = observation()
