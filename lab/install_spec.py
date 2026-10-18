@@ -132,6 +132,14 @@ def build_guest_install_spec(observation: dict[str, Any]) -> dict[str, Any]:
         for node in _walk(disk):
             if _mountpoints(node):
                 raise InstallSpecError("A partition in the lab disk tree is mounted")
+            node_holders = node.get("holders")
+            node_swap = node.get("active_swap")
+            if not isinstance(node_holders, list) or any(not isinstance(item, str) for item in node_holders):
+                raise InstallSpecError("Device-tree holder state is missing or malformed")
+            if not isinstance(node_swap, bool):
+                raise InstallSpecError("Device-tree active-swap state is missing or malformed")
+            if node_holders or node_swap:
+                raise InstallSpecError("A device in the lab disk tree is held or active as swap")
     if not any(d.get("path") == BOOT_PATH and d.get("type") == "rom" and d.get("read_only") is True for d in roms):
         raise InstallSpecError("A separate read-only boot medium was not verified")
     swaps = observation.get("active_swaps", [])
