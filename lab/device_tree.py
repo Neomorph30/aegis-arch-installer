@@ -17,12 +17,21 @@ def validate_device_forest(
     *,
     require_children: bool,
 ) -> None:
-    """Validate a forest iteratively; root depth is zero."""
-    stack = [(root, 0) for root in reversed(roots)]
+    """Validate a forest iteratively; root depth is zero.
+
+    Iterator frames avoid copying every sibling into a second stack before the
+    node-count limit can be enforced.
+    """
+    stack = [(iter(roots), 0)]
     visited = 0
 
     while stack:
-        node, depth = stack.pop()
+        siblings, depth = stack[-1]
+        try:
+            node = next(siblings)
+        except StopIteration:
+            stack.pop()
+            continue
 
         if depth > MAX_DEVICE_TREE_DEPTH:
             raise DeviceTreeValidationError(
@@ -54,7 +63,5 @@ def validate_device_forest(
             )
             raise DeviceTreeValidationError(message)
 
-        stack.extend(
-            (child, depth + 1)
-            for child in reversed(children)
-        )
+        if children:
+            stack.append((iter(children), depth + 1))
