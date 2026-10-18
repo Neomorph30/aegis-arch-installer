@@ -96,6 +96,14 @@ class ExecutionGateTests(unittest.TestCase):
         changed["devices"][0]["serial"] = "WRONG-DISK"
         self.assertEqual(self.assess("preflight", obs=changed)["status"], "BLOCKED")
 
+    def test_changed_kernel_identity_fails_closed_even_when_path_and_serial_match(self):
+        changed = observation()
+        changed["devices"][0]["major_minor"] = "252:99"
+        result = self.assess("preflight", obs=changed)
+        self.assertEqual(result["status"], "BLOCKED")
+        self.assertFalse(result["execution_enabled"])
+        self.assertFalse(result["disk_changes_performed"])
+
     def test_altered_plan_gate_fails_closed(self):
         altered = json.loads(json.dumps(self.plan))
         altered["phases"][2]["required_gates"] = []
