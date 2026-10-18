@@ -93,6 +93,34 @@ class GuestInstallSpecTests(unittest.TestCase):
         with self.assertRaisesRegex(InstallSpecError, "partition"):
             build_guest_install_spec(obs)
 
+
+    def test_child_holder_state_rejected(self):
+        obs = observation()
+        obs["devices"][0]["children"] = [{
+            "path": "/dev/vda1", "major_minor": "252:1", "type": "part",
+            "mountpoints": [], "holders": ["dm-0"], "active_swap": False, "children": [],
+        }]
+        with self.assertRaisesRegex(InstallSpecError, "held or active as swap"):
+            build_guest_install_spec(obs)
+
+    def test_child_active_swap_rejected(self):
+        obs = observation()
+        obs["devices"][0]["children"] = [{
+            "path": "/dev/vda1", "major_minor": "252:1", "type": "part",
+            "mountpoints": [], "holders": [], "active_swap": True, "children": [],
+        }]
+        with self.assertRaisesRegex(InstallSpecError, "held or active as swap"):
+            build_guest_install_spec(obs)
+
+    def test_child_holder_state_must_be_present(self):
+        obs = observation()
+        obs["devices"][0]["children"] = [{
+            "path": "/dev/vda1", "major_minor": "252:1", "type": "part",
+            "mountpoints": [], "active_swap": False, "children": [],
+        }]
+        with self.assertRaisesRegex(InstallSpecError, "Device-tree holder state"):
+            build_guest_install_spec(obs)
+
     def test_active_swap_rejected(self):
         obs = observation()
         obs["active_swaps"] = ["/dev/vda2"]
