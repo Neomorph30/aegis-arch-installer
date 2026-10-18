@@ -62,6 +62,44 @@ class GuestProbeTests(unittest.TestCase):
         self.assertFalse(kwargs.get("shell", False))
         self.assertEqual(kwargs["timeout"], 8)
 
+
+    def test_invalid_readonly_flag_fails_closed(self):
+        for bad in (None, "unknown", "1", 2, -1):
+            data = lsblk_data()
+            data["blockdevices"][0]["ro"] = bad
+            with self.subTest(value=bad), self.assertRaisesRegex(GuestProbeError, "read-only flag"):
+                observe_guest(
+                    sys_root=self.sys, proc_root=self.proc,
+                    run=lambda *args, _data=data, **kwargs: SimpleNamespace(stdout=json.dumps(_data)),
+                )
+
+    def test_missing_mountpoints_fails_closed(self):
+        data = lsblk_data()
+        del data["blockdevices"][0]["mountpoints"]
+        with self.assertRaisesRegex(GuestProbeError, "Mountpoint data is missing"):
+            observe_guest(
+                sys_root=self.sys, proc_root=self.proc,
+                run=lambda *args, **kwargs: SimpleNamespace(stdout=json.dumps(data)),
+            )
+
+    def test_malformed_mountpoint_entry_fails_closed(self):
+        data = lsblk_data()
+        data["blockdevices"][0]["mountpoints"] = [42]
+        with self.assertRaisesRegex(GuestProbeError, "Malformed mountpoint"):
+            observe_guest(
+                sys_root=self.sys, proc_root=self.proc,
+                run=lambda *args, **kwargs: SimpleNamespace(stdout=json.dumps(data)),
+            )
+
+    def test_missing_device_capacity_fails_closed(self):
+        data = lsblk_data()
+        del data["blockdevices"][0]["size"]
+        with self.assertRaisesRegex(GuestProbeError, "size is missing or malformed"):
+            observe_guest(
+                sys_root=self.sys, proc_root=self.proc,
+                run=lambda *args, **kwargs: SimpleNamespace(stdout=json.dumps(data)),
+            )
+
     def test_missing_kernel_device_identity_fails_closed(self):
         data = lsblk_data()
         del data["blockdevices"][0]["maj:min"]
