@@ -38,10 +38,16 @@ def _run_lsblk(run: Callable[..., Any] = subprocess.run) -> str:
 
 
 def _mountpoints(node: dict[str, Any]) -> list[str]:
-    value = node.get("mountpoints") or []
+    if "mountpoints" not in node:
+        raise GuestProbeError("Mountpoint data is missing from lsblk")
+    value = node["mountpoints"]
+    if value is None:
+        return []
     if isinstance(value, str):
         value = [value]
-    if not isinstance(value, list):
+    if not isinstance(value, list) or any(
+        entry is not None and not isinstance(entry, str) for entry in value
+    ):
         raise GuestProbeError("Malformed mountpoint data from lsblk")
     return [entry for entry in value if isinstance(entry, str) and entry.strip()]
 
@@ -64,9 +70,12 @@ def _normalize(node: Any, sys_root: Path, swaps: set[str]) -> dict[str, Any]:
     except ValueError as exc:
         raise GuestProbeError("Device node has malformed kernel major/minor identity") from exc
     size = node.get("size")
-    if size is not None and (isinstance(size, bool) or not isinstance(size, int)):
-        raise GuestProbeError("Device size is malformed")
-    raw_children = node.get("children") or []
+    if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+        raise GuestProbeError("Device size is missing or malformed")
+    raw_ro = node.get("ro")
+    if type(raw_ro) not in (bool, int) or raw_ro not in (0, 1):
+        raise GuestProbeError("Device read-only flag is missing or malformed")
+    raw_children = node.get("children", [])
     if not isinstance(raw_children, list):
         raise GuestProbeError("Device children are malformed")
     holders_dir = sys_root / "class" / "block" / name / "holders"
@@ -81,7 +90,7 @@ def _normalize(node: Any, sys_root: Path, swaps: set[str]) -> dict[str, Any]:
         "type": node.get("type"),
         "serial": node.get("serial"),
         "size_bytes": size,
-        "read_only": node.get("ro") in (1, True, "1"),
+        "read_only": bool(raw_ro),
         "mountpoints": _mountpoints(node),
         "holders": holders,
         "active_swap": path in swaps,
