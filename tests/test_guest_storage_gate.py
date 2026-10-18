@@ -269,6 +269,14 @@ class GuestStorageGateTests(unittest.TestCase):
             ):
                 validate_lab_primary(sample)
 
+    def test_duplicate_kernel_identity_in_nested_topology_blocks(self):
+        sample = fixture()
+        child = node("/dev/vda1", None, PRIMARY_BYTES - 1024**3, major_minor="252:0")
+        child["type"] = "part"
+        sample["devices"][0]["children"] = [child]
+        with self.assertRaisesRegex(GuestStorageGateError, "Duplicate kernel major/minor identity"):
+            validate_lab_primary(sample)
+
     def test_duplicate_paths_and_incomplete_topology_block(self):
         sample = fixture()
         sample["devices"][1]["path"] = sample["devices"][0]["path"]
