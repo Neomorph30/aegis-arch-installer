@@ -16,9 +16,16 @@ from lab.guest_storage_gate import (
 
 
 def node(path, serial, size, *, ro=False, children=None, mountpoints=None,
-         holders=None, active_swap=False, ambiguous=False, removable=False):
+         holders=None, active_swap=False, ambiguous=False, removable=False, major_minor=None):
+    if major_minor is None:
+        major_minor = {
+            "/dev/vda": "252:0",
+            "/dev/vdb": "252:1",
+            "/dev/vda1": "252:2",
+        }.get(path, "253:0")
     return {
         "path": path,
+        "major_minor": major_minor,
         "type": "disk",
         "serial": serial,
         "size": size,
@@ -242,6 +249,25 @@ class GuestStorageGateTests(unittest.TestCase):
         self.assertEqual(result["status"], "BLOCKED")
         self.assertFalse(result["write_authorized"])
         self.assertFalse(result["writes_performed"])
+
+    def test_duplicate_kernel_major_minor_identity_blocks_even_with_distinct_paths(self):
+        sample = fixture()
+        sample["devices"][1]["major_minor"] = sample["devices"][0]["major_minor"]
+        with self.assertRaisesRegex(GuestStorageGateError, "Duplicate kernel major/minor identity"):
+            validate_lab_primary(sample)
+        sample = fixture()
+        sample["devices"][1]["major_minor"] = "0252:000"
+        with self.assertRaisesRegex(GuestStorageGateError, "Duplicate kernel major/minor identity"):
+            validate_lab_primary(sample)
+
+    def test_missing_or_malformed_kernel_identity_blocks(self):
+        for value in (None, "252", "252:0:extra", "x:0", ""):
+            sample = fixture()
+            sample["devices"][0]["major_minor"] = value
+            with self.subTest(value=value), self.assertRaisesRegex(
+                GuestStorageGateError, "Missing or malformed kernel device identity"
+            ):
+                validate_lab_primary(sample)
 
     def test_duplicate_paths_and_incomplete_topology_block(self):
         sample = fixture()
