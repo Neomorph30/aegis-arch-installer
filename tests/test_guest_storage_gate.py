@@ -155,7 +155,7 @@ class GuestStorageGateTests(unittest.TestCase):
                 validate_lab_primary(sample)
 
     @patch("pathlib.Path.iterdir", return_value=[])
-    @patch("pathlib.Path.read_text", return_value="Filename Type Size Used Priority\\n")
+    @patch("pathlib.Path.read_text", return_value="Filename Type Size Used Priority\n")
     @patch("subprocess.run")
     def test_live_observer_normalizes_lsblk_and_reads_sysfs(self, run, read_text, iterdir):
         import json
@@ -191,7 +191,7 @@ class GuestStorageGateTests(unittest.TestCase):
         self.assertNotIn("CHILDREN", lsblk_command[lsblk_command.index("--output") + 1])
         iterdir.assert_called()
 
-    @patch("pathlib.Path.read_text", return_value="Filename Type Size Used Priority\\n")
+    @patch("pathlib.Path.read_text", return_value="Filename Type Size Used Priority\n")
     @patch("subprocess.run")
     def test_live_observer_rejects_deep_or_oversized_raw_tree_before_enrichment(self, run, _swaps):
         import json
@@ -336,7 +336,7 @@ class GuestStorageGateTests(unittest.TestCase):
             observe_guest_storage()
 
     @patch("pathlib.Path.iterdir", side_effect=PermissionError("cannot inspect holders"))
-    @patch("pathlib.Path.read_text", return_value="Filename Type Size Used Priority\\n")
+    @patch("pathlib.Path.read_text", return_value="Filename Type Size Used Priority\n")
     @patch("subprocess.run")
     def test_live_observer_blocks_when_sysfs_holders_cannot_be_read(self, run, swaps, iterdir):
         import json
@@ -345,7 +345,7 @@ class GuestStorageGateTests(unittest.TestCase):
         with self.assertRaisesRegex(GuestStorageGateError, "verify sysfs holders"):
             observe_guest_storage()
 
-    @patch("pathlib.Path.read_text", return_value="Filename Type Size Used Priority\\n")
+    @patch("pathlib.Path.read_text", return_value="Filename Type Size Used Priority\n")
     @patch("subprocess.run")
     def test_live_observer_blocks_missing_kernel_device_identity(self, run, swaps):
         import json
@@ -358,7 +358,7 @@ class GuestStorageGateTests(unittest.TestCase):
 
     @patch("pathlib.Path.iterdir", return_value=[])
     @patch("pathlib.Path.read_text", return_value=(
-        "Filename Type Size Used Priority\\n/dev/vda partition 1024 0 -2\\n"
+        "Filename Type Size Used Priority\n/dev/vda partition 1024 0 -2\n"
     ))
     @patch("os.stat")
     @patch("subprocess.run")
