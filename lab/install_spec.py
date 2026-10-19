@@ -6,6 +6,8 @@ import hmac
 import json
 from typing import Any
 
+from lab.device_tree import DeviceTreeValidationError, validate_device_forest
+
 
 class InstallSpecError(ValueError):
     """A guest installation specification failed closed preflight."""
@@ -83,6 +85,11 @@ def build_guest_install_spec(observation: dict[str, Any]) -> dict[str, Any]:
     unexpected = [d for d in raw if d.get("type") not in {"disk", "rom", "loop"}]
     if unexpected:
         raise InstallSpecError("Unexpected block-device root type is present")
+
+    try:
+        validate_device_forest(raw, require_children=True)
+    except DeviceTreeValidationError as exc:
+        raise InstallSpecError(str(exc)) from exc
 
     kernel_identities: set[tuple[int, int]] = set()
     for root in raw:

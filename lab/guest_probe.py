@@ -6,6 +6,8 @@ from pathlib import Path
 import subprocess
 from typing import Any, Callable
 
+from lab.device_tree import DeviceTreeValidationError, validate_device_forest
+
 LSBLK_FIELDS = "NAME,PATH,TYPE,SIZE,SERIAL,RO,MOUNTPOINTS,PKNAME,PARTTYPE,PARTLABEL,MAJ:MIN"
 
 
@@ -174,12 +176,19 @@ def observe_guest(
         if fields:
             swaps.add(fields[0])
 
-    devices = []
+    raw_roots = []
     for node in parsed["blockdevices"]:
         if not isinstance(node, dict):
             raise GuestProbeError("Malformed top-level lsblk node")
         if node.get("type") in ("disk", "rom"):
-            devices.append(_normalize(node, sys_path, swaps))
+            raw_roots.append(node)
+
+    try:
+        validate_device_forest(raw_roots, require_children=False)
+    except DeviceTreeValidationError as exc:
+        raise GuestProbeError(str(exc)) from exc
+
+    devices = [_normalize(node, sys_path, swaps) for node in raw_roots]
 
     network_mode = _network_mode(sys_path, run)
 

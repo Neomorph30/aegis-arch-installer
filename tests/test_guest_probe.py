@@ -203,5 +203,33 @@ class GuestProbeTests(unittest.TestCase):
                           run=lambda *args, **kwargs: SimpleNamespace(stdout='{"unexpected": []}'))
 
 
+    def test_device_tree_depth_limit_is_enforced_before_normalization(self):
+        data = lsblk_data()
+        node = data["blockdevices"][0]["children"][0]
+        for _ in range(16):
+            child = {"children": []}
+            node["children"] = [child]
+            node = child
+
+        with self.assertRaisesRegex(GuestProbeError, "maximum depth"):
+            observe_guest(
+                sys_root=self.sys,
+                proc_root=self.proc,
+                run=lambda *args, **kwargs: SimpleNamespace(stdout=json.dumps(data)),
+            )
+
+    def test_device_tree_node_limit_is_enforced_across_selected_roots(self):
+        data = lsblk_data()
+        data["blockdevices"][0]["children"].extend(
+            {"children": []} for _ in range(4093)
+        )
+
+        with self.assertRaisesRegex(GuestProbeError, "maximum node count"):
+            observe_guest(
+                sys_root=self.sys,
+                proc_root=self.proc,
+                run=lambda *args, **kwargs: SimpleNamespace(stdout=json.dumps(data)),
+            )
+
 if __name__ == "__main__":
     unittest.main()

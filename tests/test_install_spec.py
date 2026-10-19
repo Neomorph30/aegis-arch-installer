@@ -188,5 +188,25 @@ class GuestInstallSpecTests(unittest.TestCase):
             build_guest_install_spec(obs)
 
 
+    def test_device_tree_depth_limit_is_enforced_before_walk(self):
+        obs = observation()
+        node = obs["devices"][0]
+        for _ in range(17):
+            child = {"children": []}
+            node["children"] = [child]
+            node = child
+
+        with self.assertRaisesRegex(InstallSpecError, "maximum depth"):
+            build_guest_install_spec(obs)
+
+    def test_device_tree_node_limit_is_enforced_across_roots(self):
+        obs = observation()
+        obs["devices"][0]["children"] = [
+            {"children": []} for _ in range(4094)
+        ]
+
+        with self.assertRaisesRegex(InstallSpecError, "maximum node count"):
+            build_guest_install_spec(obs)
+
 if __name__ == "__main__":
     unittest.main()
