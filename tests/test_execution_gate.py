@@ -124,6 +124,26 @@ class ExecutionGateTests(unittest.TestCase):
     def test_invalid_journal_fails_closed(self):
         self.assertEqual(self.assess("preflight", events=[{"password": "secret"}])["status"], "BLOCKED")
 
+    def test_uncertain_prior_phase_blocks_all_later_phases(self):
+        from lab.transaction_journal import TransactionJournal
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            journal = TransactionJournal(Path(tmp) / "journal.jsonl")
+            journal.append("phase_intent", phase="preflight", status="STARTED")
+            journal.append("phase_result", phase="preflight", status="UNCERTAIN",
+                           note_code="state_ambiguous")
+            events = journal.read()
+        for phase in ("explicit_target_review", "partition_gpt", "format_efi"):
+            with self.subTest(phase=phase):
+                result = self.assess(phase, confirmation=confirmation_phrase(self.plan["target"]),
+                                     events=events)
+                self.assertEqual(result["status"], "BLOCKED")
+                self.assertFalse(result["execution_enabled"])
+                self.assertFalse(result["commands_executed"])
+                self.assertFalse(result["disk_changes_performed"])
+
+
     def test_completed_phase_cannot_be_retried(self):
         from lab.transaction_journal import TransactionJournal
         import tempfile
