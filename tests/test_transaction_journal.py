@@ -78,6 +78,26 @@ class TransactionJournalTests(unittest.TestCase):
         self.assertEqual(events[0]["event_type"], "phase_intent")
         self.assertEqual(assess_recovery(events)["action"], "STOP_AND_PRESERVE_EVIDENCE")
 
+    def test_partial_write_failure_preserves_incomplete_journal_and_blocks_followup(self):
+        from unittest.mock import patch
+        real_write = os.write
+        calls = {"count": 0}
+        def fail_after_partial_write(fd, data):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return real_write(fd, data[:7])
+            raise OSError("simulated write failure after partial progress")
+        with patch("lab.transaction_journal.os.write", side_effect=fail_after_partial_write):
+            with self.assertRaisesRegex(JournalError, "append failed"):
+                self.journal.append("phase_intent", phase="preflight", status="STARTED")
+        # Do not truncate, rewrite, or automatically repair an ambiguous record.
+        with self.assertRaisesRegex(JournalError, "incomplete record"):
+            self.journal.read()
+        with self.assertRaisesRegex(JournalError, "incomplete record"):
+            self.journal.append("phase_intent", phase="preflight", status="STARTED")
+        self.assertEqual(calls["count"], 2)
+
+
 
     def test_destructive_failure_requires_preserving_evidence(self):
         self.journal.append("phase_intent", phase="partition_gpt", status="STARTED")
