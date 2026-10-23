@@ -73,8 +73,11 @@ structured observation fixture with a top-level `devices` list; it reports
 `blocked` for incomplete or unsafe observations and never authorizes writes.
 The fixture mode does not probe live hardware. The separate `--live` mode
 uses read-only `lsblk`, sysfs holder entries and `/proc/swaps` observations;
-unavailable safety observations block assessment. Neither mode is yet wired into
-the storage planner, and neither authorizes writes.
+unavailable safety observations block assessment. The review-only live planning
+path requires a fresh assessment and rechecks target serial, WWN and capacity
+snapshots before producing a proposal. This remains a planning gate only: it does
+not authorize writes, and no partition or filesystem operations exist in this
+version.
 No partition or filesystem operations exist in this version.
 
 For a live, **read-only** inventory on Linux:
