@@ -175,6 +175,12 @@ class GuestInstallSpecTests(unittest.TestCase):
         with self.assertRaisesRegex(InstallSpecError, "Active swap observations are malformed"):
             build_guest_install_spec(obs)
 
+    def test_secondary_capacity_must_match_fixed_lab_fixture(self):
+        obs = observation()
+        obs["devices"][1]["size_bytes"] += 1
+        with self.assertRaisesRegex(InstallSpecError, "exact 8 GiB lab fixture"):
+            build_guest_install_spec(obs)
+
     def test_missing_secondary_capacity_fails_closed(self):
         obs = observation()
         obs["devices"][1].pop("size_bytes")

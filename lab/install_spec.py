@@ -14,6 +14,7 @@ class InstallSpecError(ValueError):
 
 
 MIN_PRIMARY_BYTES = 24 * 1024**3
+SECONDARY_BYTES = 8 * 1024**3
 EFI_BYTES = 4 * 1024**3
 PRIMARY_PATH = "/dev/vda"
 PRIMARY_SERIAL = "AEGIS-LAB-PRIMARY"
@@ -125,8 +126,8 @@ def build_guest_install_spec(observation: dict[str, Any]) -> dict[str, Any]:
     if secondary.get("read_only") is not True:
         raise InstallSpecError("Secondary lab disk must be read-only during Layer 07")
     secondary_size = secondary.get("size_bytes")
-    if isinstance(secondary_size, bool) or not isinstance(secondary_size, int) or secondary_size <= 0:
-        raise InstallSpecError("Secondary lab disk capacity is missing or malformed")
+    if isinstance(secondary_size, bool) or not isinstance(secondary_size, int) or secondary_size != SECONDARY_BYTES:
+        raise InstallSpecError("Secondary lab disk capacity must match the exact 8 GiB lab fixture")
     for disk in (primary, secondary):
         holders = disk.get("holders")
         active_swap = disk.get("active_swap")
