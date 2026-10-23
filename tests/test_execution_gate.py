@@ -20,13 +20,13 @@ def observation():
         "network_mode": "disabled",
         "active_swaps": [],
         "devices": [
-            {"path": "/dev/vda", "type": "disk", "serial": "AEGIS-LAB-PRIMARY",
+            {"path": "/dev/vda", "major_minor": "252:0", "type": "disk", "serial": "AEGIS-LAB-PRIMARY",
              "size_bytes": 24 * 1024**3, "read_only": False, "mountpoints": [],
              "holders": [], "active_swap": False, "children": []},
-            {"path": "/dev/vdb", "type": "disk", "serial": "AEGIS-LAB-SECONDARY",
+            {"path": "/dev/vdb", "major_minor": "252:16", "type": "disk", "serial": "AEGIS-LAB-SECONDARY",
              "size_bytes": 8 * 1024**3, "read_only": True, "mountpoints": [],
              "holders": [], "active_swap": False, "children": []},
-            {"path": "/dev/sr0", "type": "rom", "read_only": True},
+            {"path": "/dev/sr0", "major_minor": "11:0", "type": "rom", "read_only": True, "children": []},
         ],
     }
 
@@ -95,6 +95,14 @@ class ExecutionGateTests(unittest.TestCase):
         changed = observation()
         changed["devices"][0]["serial"] = "WRONG-DISK"
         self.assertEqual(self.assess("preflight", obs=changed)["status"], "BLOCKED")
+
+    def test_changed_kernel_identity_fails_closed_even_when_path_and_serial_match(self):
+        changed = observation()
+        changed["devices"][0]["major_minor"] = "252:99"
+        result = self.assess("preflight", obs=changed)
+        self.assertEqual(result["status"], "BLOCKED")
+        self.assertFalse(result["execution_enabled"])
+        self.assertFalse(result["disk_changes_performed"])
 
     def test_altered_plan_gate_fails_closed(self):
         altered = json.loads(json.dumps(self.plan))
