@@ -78,7 +78,6 @@ path requires a fresh assessment and rechecks target serial, WWN and capacity
 snapshots before producing a proposal. This remains a planning gate only: it does
 not authorize writes, and no partition or filesystem operations exist in this
 version.
-No partition or filesystem operations exist in this version.
 
 For a live, **read-only** inventory on Linux:
 
