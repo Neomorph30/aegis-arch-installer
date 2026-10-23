@@ -108,6 +108,21 @@ def _validate_event(event: dict[str, Any], sequence: int, previous_hash: str) ->
         raise JournalError("Journal record hash mismatch; preserve evidence")
 
 
+def _read_bounded(fd: int) -> bytes:
+    """Read at most the supported journal size plus one byte, avoiding unbounded allocation."""
+    chunks: list[bytes] = []
+    total = 0
+    while total <= MAX_JOURNAL_BYTES:
+        chunk = os.read(fd, min(64 * 1024, MAX_JOURNAL_BYTES + 1 - total))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+    if total > MAX_JOURNAL_BYTES:
+        raise JournalError("Journal exceeds the supported evidence size; preserve it for offline review")
+    return b"".join(chunks)
+
+
 def parse_journal(raw: bytes) -> list[dict[str, Any]]:
     if not raw:
         return []
@@ -183,8 +198,10 @@ class TransactionJournal:
             info = parent.lstat()
         except OSError as exc:
             raise JournalError("Journal directory must already exist") from exc
-        if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode) or stat.S_IMODE(info.st_mode) & 0o077:
-            raise JournalError("Journal directory must be a private non-symlink directory")
+        if (not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode)
+                or stat.S_IMODE(info.st_mode) & 0o077 or not (info.st_mode & stat.S_IXUSR)
+                or info.st_uid != os.geteuid()):
+            raise JournalError("Journal directory must be owned by the current user and private, searchable, and non-symlink")
 
     def append(
         self,
@@ -232,13 +249,7 @@ class TransactionJournal:
             if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) & 0o077:
                 raise JournalError("Journal must be a private single-link regular file")
             os.lseek(fd, 0, os.SEEK_SET)
-            chunks = []
-            while True:
-                chunk = os.read(fd, 1024 * 1024)
-                if not chunk:
-                    break
-                chunks.append(chunk)
-            events = parse_journal(b"".join(chunks))
+            events = parse_journal(_read_bounded(fd))
             _validate_transition(events, probe)
             previous = events[-1]["event_hash"] if events else "0" * 64
             event = dict(probe)
@@ -248,13 +259,18 @@ class TransactionJournal:
             event["event_hash"] = _event_hash(event)
             _validate_event(event, len(events) + 1, previous)
             line = _canonical(event) + b"\n"
+            if info.st_size + len(line) > MAX_JOURNAL_BYTES:
+                raise JournalError("Appending would exceed the supported journal evidence size; preserve it for offline review")
             written = 0
             while written < len(line):
-                written += os.write(fd, line[written:])
+                count = os.write(fd, line[written:])
+                if count <= 0:
+                    raise JournalError("Journal append made no progress; preserve existing evidence")
+                written += count
             os.fsync(fd)
             if created:
                 # Persist the new directory entry as well as the journal contents.
-                dir_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | getattr(os, "O_DIRECTORY", 0)
+                dir_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_DIRECTORY
                 dir_fd = os.open(self.path.parent, dir_flags)
                 try:
                     os.fsync(dir_fd)
@@ -277,13 +293,7 @@ class TransactionJournal:
             info = os.fstat(fd)
             if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) & 0o077:
                 raise JournalError("Journal must be a private single-link regular file")
-            raw = bytearray()
-            while True:
-                chunk = os.read(fd, 1024 * 1024)
-                if not chunk:
-                    break
-                raw.extend(chunk)
-            return parse_journal(bytes(raw))
+            return parse_journal(_read_bounded(fd))
         except OSError as exc:
             raise JournalError("Journal read failed; preserve evidence") from exc
         finally:

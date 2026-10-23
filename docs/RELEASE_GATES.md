@@ -2,7 +2,7 @@
 
 ## Preview 0.2 — read-only; Layer 01 engineering requirements
 
-- [x] No disk installation/execution subsystem exists.
+- [x] No real disk installation executor exists; `aegis.virtual_executor` accepts only private synthetic regular files and writes a review journal, never target data.
 - [x] Device enumeration runs only allowlisted read-only commands.
 - [x] Fixture-based end-to-end CLI flow and interactive wizard.
 - [x] Storage proposal includes partition geometry, blocking hazards and states.
@@ -56,6 +56,6 @@
 - [x] No guest networking, host USB, host filesystem sharing or KVM in baseline lab.
 - [x] QMP-based machine status and TPM presence inspection (mock unit tests).
 - [x] Unit tests for synthetic images, invalid inputs, unsafe paths and QMP failure.
-- [ ] Actual QEMU/OVMF/swtpm launch passed on GitHub runner (pending CI evidence).
+- [x] Actual QEMU/OVMF/swtpm launch passed on GitHub runner; disposable Arch live boot and read-only guest preflight passed with `guest_preflight_write_authorized=false` and `guest_preflight_writes_performed=false` (CI run: https://github.com/Neomorph30/aegis-arch-installer/actions/runs/39063685702).
 - [ ] Independent security review of runtime and hypervisor confinement.
 - [ ] Any real guest Arch install or offline LUKS recovery — explicitly future layers.

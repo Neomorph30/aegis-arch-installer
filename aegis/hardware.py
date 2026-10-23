@@ -7,6 +7,8 @@ re-identify every device and check it is not in use immediately before any write
 from __future__ import annotations
 
 import json
+import os
+import stat
 from pathlib import Path
 import platform
 import shutil
@@ -57,8 +59,123 @@ def read_disks() -> list[dict[str, Any]]:
         raise HardwareInspectionError("lsblk returned invalid JSON") from exc
     if not isinstance(output, dict) or not isinstance(output.get("blockdevices"), list):
         raise HardwareInspectionError("lsblk returned an unexpected device structure")
-    return [d for d in output["blockdevices"]
-            if isinstance(d, dict) and d.get("type") == "disk"]
+    disks = [d for d in output["blockdevices"]
+             if isinstance(d, dict) and d.get("type") == "disk"]
+    # lsblk's --tree output omits "children" for leaf devices. Normalize that
+    # real-world shape for both inspection/planning and the live assessor, while
+    # preserving explicitly malformed child values so downstream checks block.
+    stack = [(disk, 0) for disk in reversed(disks)]
+    visited = 0
+    while stack:
+        node, depth = stack.pop()
+        visited += 1
+        if depth > 16 or visited > 4096:
+            raise HardwareInspectionError(
+                "lsblk device topology exceeds safety limits; refusing incomplete inventory"
+            )
+        if not isinstance(node, dict):
+            continue
+        if "children" not in node:
+            node["children"] = []
+        children = node["children"]
+        if isinstance(children, list):
+            stack.extend((child, depth + 1) for child in reversed(children))
+    return disks
+
+
+def _active_swap_devices() -> set[tuple[int, int]] | None:
+    """Read active swap block-device major/minor IDs; None means state is unknown."""
+    try:
+        lines = Path("/proc/swaps").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    devices: set[tuple[int, int]] = set()
+    for line in lines[1:]:
+        fields = line.split()
+        if not fields:
+            continue
+        try:
+            info = os.stat(fields[0])
+        except OSError:
+            # An active swap entry that cannot be resolved is unknown, not safe.
+            # Returning None causes every affected device's swap state to fail closed.
+            return None
+        if stat.S_ISBLK(info.st_mode):
+            devices.add((os.major(info.st_rdev), os.minor(info.st_rdev)))
+    return devices
+
+
+def _sysfs_block_node(path: str) -> Path:
+    """Resolve a device alias through its kernel major/minor identity, not basename."""
+    info = os.stat(path)
+    if not stat.S_ISBLK(info.st_mode):
+        raise OSError("observed path is not a block device")
+    major, minor = os.major(info.st_rdev), os.minor(info.st_rdev)
+    return Path("/sys/dev/block") / f"{major}:{minor}"
+
+
+def _enrich_block_node(node: dict[str, Any], swap_devices: set[tuple[int, int]] | None) -> None:
+    """Attach explicit holder and swap observations to every lsblk tree node."""
+    path = node.get("path")
+    device_id: tuple[int, int] | None = None
+    if isinstance(path, str):
+        try:
+            sysfs_node = _sysfs_block_node(path)
+            info = os.stat(path)
+            device_id = (os.major(info.st_rdev), os.minor(info.st_rdev))
+            node["holders"] = sorted(entry.name for entry in (sysfs_node / "holders").iterdir())
+        except OSError:
+            # Unknown is deliberately not represented as an empty holder list.
+            node["holders"] = None
+    else:
+        node["holders"] = None
+    if swap_devices is None or device_id is None:
+        node["active_swap"] = None
+    else:
+        node["active_swap"] = device_id in swap_devices
+    # Identity collisions are checked by the assessor across the complete tree.
+    node["ambiguous"] = False
+    children = node.get("children")
+    if isinstance(children, list):
+        for child in children:
+            if isinstance(child, dict):
+                _enrich_block_node(child, swap_devices)
+
+
+def read_assessment_observation() -> dict[str, Any]:
+    """Build a bounded, live read-only observation for the inventory assessor."""
+    disks = read_disks()
+
+    # Bound traversal before recursive enrichment. Malformed or excessive topology
+    # must fail closed rather than consume unbounded time or Python stack depth.
+    stack = [(disk, 0) for disk in disks]
+    visited = 0
+    while stack:
+        node, depth = stack.pop()
+        visited += 1
+        if depth > 16 or visited > 4096:
+            for disk in disks:
+                disk["ambiguous"] = True
+                disk["holders"] = None
+                disk["active_swap"] = None
+            return {"devices": disks}
+        if not isinstance(node, dict):
+            # Preserve malformed entries for the assessor, which will block them.
+            continue
+        # With --tree and NAME selected, lsblk omits "children" on genuine leaf
+        # devices. Normalize that documented shape here; fixtures still must
+        # provide explicit topology, and an explicitly malformed value is retained
+        # so assess_inventory can reject it rather than silently treating it as empty.
+        if "children" not in node:
+            node["children"] = []
+        children = node["children"]
+        if isinstance(children, list):
+            stack.extend((child, depth + 1) for child in children)
+
+    swap_devices = _active_swap_devices()
+    for disk in disks:
+        _enrich_block_node(disk, swap_devices)
+    return {"devices": disks}
 
 
 def _cpu_label() -> str:

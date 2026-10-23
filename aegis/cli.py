@@ -10,11 +10,12 @@ import sys
 from typing import Any
 
 from .assurance import formatted_manifest
-from .hardware import HardwareInspectionError, inspect
+from .hardware import HardwareInspectionError, inspect, read_assessment_observation
+from .inventory import assess_inventory
 from .network import NetworkSetupError, interactive_preflight, network_preflight, print_network_status, launch_wifi_setup
 from .planner import PlanError, build_storage_plan
 from .profiles import recommend
-from .reporting import html_report, public_view
+from .reporting import html_report, public_view, validate_proposal_evidence
 
 MAX_JSON_INPUT_BYTES = 2 * 1024 * 1024
 
@@ -91,6 +92,35 @@ def _choose(prompt: str, max_index: int, *, attempts: int = 3) -> int | None:
     return None
 
 
+def _require_live_target_reviewable(target: str, expected: dict[str, Any] | None = None) -> None:
+    """Block live proposals if a fresh target snapshot is unsafe or identity changed."""
+    observation = read_assessment_observation()
+    whole = assess_inventory(observation)
+    if any(item.get("code") == "DUPLICATE_IDENTITY" for item in whole.get("findings", [])):
+        raise PlanError("Live inventory has duplicate stable device identities; resolve ambiguity before planning")
+    matches = [node for node in observation.get("devices", [])
+               if isinstance(node, dict) and node.get("path") == target]
+    if len(matches) != 1:
+        raise PlanError("Selected live disk is not uniquely present in fresh hardware observations")
+    fresh = matches[0]
+    if expected is not None:
+        for field in ("serial", "wwn", "size"):
+            old_value = expected.get(field)
+            new_value = fresh.get(field)
+            if old_value != new_value:
+                raise PlanError(
+                    f"Selected disk {field} changed between inventory and safety assessment; refresh and retry"
+                )
+        if not any(isinstance(fresh.get(field), str) and fresh[field].strip()
+                   for field in ("serial", "wwn")):
+            raise PlanError("Selected live disk has no stable identity in the fresh safety assessment")
+    result = assess_inventory({"devices": matches})
+    if result.get("status") == "blocked":
+        codes = sorted({item.get("code", "UNKNOWN") for item in result.get("findings", [])
+                        if item.get("severity") == "error"})
+        raise PlanError("Live storage assessment blocked this disk: " + ", ".join(codes))
+
+
 def wizard(inventory_file: str | None = None) -> int:
     try:
         data = _inventory(inventory_file)
@@ -134,6 +164,14 @@ def wizard(inventory_file: str | None = None) -> int:
     fs_index = _choose("Root filesystem: 1) Btrfs [default], 2) ext4: ", 2)
     filesystem = "btrfs" if fs_index is None or fs_index == 0 else "ext4"
     try:
+        if inventory_file is None:
+            _require_live_target_reviewable(
+                primary, next((disk for disk in data.get("disks", [])
+                               if isinstance(disk, dict) and disk.get("path") == primary), None))
+            if secondary is not None:
+                _require_live_target_reviewable(
+                    secondary, next((disk for disk in data.get("disks", [])
+                                     if isinstance(disk, dict) and disk.get("path") == secondary), None))
         plan = build_storage_plan(data, primary, secondary, secondary_action, filesystem=filesystem)
     except (PlanError, KeyError, TypeError, ValueError) as exc:
         print(f"Cannot create a safe proposal: {exc}", file=sys.stderr)
@@ -153,6 +191,7 @@ def wizard(inventory_file: str | None = None) -> int:
     raw_filename = _readline("\nWrite JSON proposal to NEW filename (Enter = do not save): ")
     filename = raw_filename.strip() if raw_filename is not None else ""
     if filename:
+        validate_proposal_evidence(plan)
         _write_json(filename, plan)
         print("Proposal written:", filename)
     print("\nNo installation or disk modifications occurred.")
@@ -226,6 +265,12 @@ def main(argv: list[str] | None = None) -> int:
     p_inspect = sub.add_parser("inspect", help="Read-only hardware inventory")
     p_inspect.add_argument("--json", action="store_true")
     p_inspect.add_argument("--inventory", help="Load fixture JSON rather than inspect live hardware")
+    p_assess = sub.add_parser("assess", help="Assess block-device observations; read-only")
+    assess_source = p_assess.add_mutually_exclusive_group(required=True)
+    assess_source.add_argument("--inventory",
+                               help="JSON fixture with a devices list; no hardware probing or disk writes")
+    assess_source.add_argument("--live", action="store_true",
+                               help="Collect live read-only block-device, holder and swap observations")
     p_plan = sub.add_parser("plan", help="Read-only storage partition proposal")
     p_plan.add_argument("--primary", required=True)
     p_plan.add_argument("--secondary")
@@ -255,6 +300,11 @@ def main(argv: list[str] | None = None) -> int:
                 parser.print_help()
                 return 0
             return menu(getattr(args, "inventory", None))
+        if args.command == "assess":
+            observation = read_assessment_observation() if args.live else _load_json(args.inventory)
+            result = assess_inventory(observation)
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            return 2 if result["status"] == "blocked" else 0
         if args.command == "inspect":
             data = _inventory(args.inventory)
             if args.json:
@@ -265,12 +315,23 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Secure Boot: {data.get('secure_boot_state', 'unverified')}")
                 _print_devices(data.get("disks", []))
         elif args.command == "plan":
-            plan = build_storage_plan(_inventory(args.inventory), args.primary, args.secondary,
+            inventory = _inventory(args.inventory)
+            if args.inventory is None:
+                _require_live_target_reviewable(
+                    args.primary, next((disk for disk in inventory.get("disks", [])
+                                        if isinstance(disk, dict) and disk.get("path") == args.primary), None))
+                if args.secondary is not None:
+                    _require_live_target_reviewable(
+                        args.secondary, next((disk for disk in inventory.get("disks", [])
+                                              if isinstance(disk, dict) and disk.get("path") == args.secondary), None))
+            plan = build_storage_plan(inventory, args.primary, args.secondary,
                                       args.secondary_action, filesystem=args.filesystem)
             if args.output:
+                validate_proposal_evidence(plan)
                 _write_json(args.output, plan)
                 print("Read-only proposal saved:", args.output)
             else:
+                validate_proposal_evidence(plan)
                 print(json.dumps(public_view(plan), indent=2))
         elif args.command == "wizard":
             return wizard(args.inventory)

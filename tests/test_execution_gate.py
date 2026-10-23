@@ -105,6 +105,14 @@ class ExecutionGateTests(unittest.TestCase):
     def test_unknown_phase_fails_closed(self):
         self.assertEqual(self.assess("run-arbitrary-shell", confirmation="yes")["status"], "BLOCKED")
 
+    def test_malformed_extra_phase_entry_fails_closed_without_exception(self):
+        altered = json.loads(json.dumps(self.plan))
+        altered["phases"].append("unexpected non-object phase")
+        result = self.assess("preflight", plan=altered)
+        self.assertEqual(result["status"], "BLOCKED")
+        self.assertFalse(result["execution_enabled"])
+        self.assertFalse(result["disk_changes_performed"])
+
     def test_invalid_journal_fails_closed(self):
         self.assertEqual(self.assess("preflight", events=[{"password": "secret"}])["status"], "BLOCKED")
 

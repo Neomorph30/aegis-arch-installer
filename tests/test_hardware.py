@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import stat
 from subprocess import CompletedProcess, SubprocessError
 import tempfile
 import unittest
@@ -10,6 +12,9 @@ from unittest.mock import patch
 
 from aegis.hardware import (
     HardwareInspectionError,
+    _active_swap_devices,
+    _sysfs_block_node,
+    read_assessment_observation,
     _cpu_label,
     _gpu_summary,
     _memory_mib,
@@ -327,6 +332,138 @@ class StorageAndProbeTests(unittest.TestCase):
         self.assertEqual(len(read_disks()), 1)
         self.assertEqual(read_disks()[0]["path"], "/dev/sda")
         self.assertNotIn("shell", run.call_args.kwargs)
+
+    @patch("aegis.hardware.shutil.which", return_value="/usr/bin/lsblk")
+    @patch("aegis.hardware.subprocess.run")
+    def test_read_disks_normalizes_real_leaf_nodes_for_planning(self, run, _which):
+        run.return_value = CompletedProcess([], 0, json.dumps({"blockdevices": [
+            {"path": "/dev/sda", "type": "disk", "children": [
+                {"path": "/dev/sda1", "type": "part"}
+            ]},
+            {"path": "/dev/sdb", "type": "disk"},
+        ]}), "")
+        disks = read_disks()
+        self.assertEqual(disks[0]["children"][0]["children"], [])
+        self.assertEqual(disks[1]["children"], [])
+
+    @patch("aegis.hardware.shutil.which", return_value="/usr/bin/lsblk")
+    @patch("aegis.hardware.subprocess.run")
+    def test_read_disks_preserves_malformed_children_for_fail_closed_validation(self, run, _which):
+        malformed = {"unexpected": "mapping"}
+        run.return_value = CompletedProcess([], 0, json.dumps({"blockdevices": [
+            {"path": "/dev/sda", "type": "disk", "children": malformed},
+        ]}), "")
+        self.assertEqual(read_disks()[0]["children"], malformed)
+
+    def test_unresolvable_active_swap_entry_is_unknown_not_safe(self):
+        with patch(
+            "aegis.hardware.Path.read_text",
+            return_value="Filename Type Size Used Priority\n/dev/missing-swap partition 1024 0 -2\n",
+        ), patch("aegis.hardware.os.stat", side_effect=OSError("device disappeared")):
+            self.assertIsNone(_active_swap_devices())
+
+    def test_read_disks_rejects_excessive_topology_instead_of_truncating(self):
+        root = {"path": "/dev/vda", "type": "disk", "children": []}
+        cursor = root
+        for index in range(18):
+            child = {"path": f"/dev/vda{index + 1}", "type": "part", "children": []}
+            cursor["children"].append(child)
+            cursor = child
+        with patch("aegis.hardware.shutil.which", return_value="/usr/bin/lsblk"):
+            with patch(
+                "aegis.hardware.subprocess.run",
+                return_value=CompletedProcess([], 0, json.dumps({"blockdevices": [root]}), ""),
+            ):
+                with self.assertRaisesRegex(HardwareInspectionError, "topology exceeds safety limits"):
+                    read_disks()
+
+    @patch("aegis.hardware.os.stat")
+    def test_sysfs_holder_lookup_uses_kernel_major_minor_not_device_basename(self, stat_call):
+        stat_call.return_value = type("BlockStat", (), {
+            "st_mode": stat.S_IFBLK | 0o600,
+            "st_rdev": os.makedev(259, 7),
+        })()
+        self.assertEqual(str(_sysfs_block_node("/dev/renamed-alias")),
+                         "/sys/dev/block/259:7")
+        stat_call.assert_called_once_with("/dev/renamed-alias")
+
+    @patch("aegis.hardware.os.stat")
+    def test_sysfs_holder_lookup_rejects_non_block_device(self, stat_call):
+        stat_call.return_value = type("RegularStat", (), {
+            "st_mode": stat.S_IFREG | 0o600,
+            "st_rdev": 0,
+        })()
+        with self.assertRaises(OSError):
+            _sysfs_block_node("/tmp/not-a-device")
+
+    def test_live_assessment_normalizes_real_lsblk_leaf_nodes(self):
+        from aegis.inventory import assess_inventory
+
+        root = {
+            "path": "/dev/vda", "type": "disk", "serial": "SERIAL-A", "wwn": "WWN-A",
+            "mountpoints": [None],
+            # lsblk omits children on a real leaf disk.
+        }
+
+        def enrich(node, _swap):
+            node["holders"] = []
+            node["active_swap"] = False
+            node["ambiguous"] = False
+
+        with patch("aegis.hardware.read_disks", return_value=[root]), \
+             patch("aegis.hardware._active_swap_devices", return_value=set()), \
+             patch("aegis.hardware._enrich_block_node", side_effect=enrich):
+            observation = read_assessment_observation()
+
+        self.assertEqual(observation["devices"][0]["children"], [])
+        result = assess_inventory(observation)
+        self.assertEqual(result["status"], "review_required")
+        self.assertFalse(result["write_authorized"])
+
+    def test_live_assessment_preserves_explicitly_malformed_children(self):
+        root = {
+            "path": "/dev/vda", "type": "disk", "serial": "SERIAL-A", "wwn": "WWN-A",
+            "mountpoints": [None], "children": {"unexpected": "mapping"},
+        }
+
+        with patch("aegis.hardware.read_disks", return_value=[root]), \
+             patch("aegis.hardware._active_swap_devices", return_value=set()), \
+             patch("aegis.hardware._enrich_block_node") as enrich:
+            observation = read_assessment_observation()
+
+        self.assertEqual(observation["devices"][0]["children"], {"unexpected": "mapping"})
+        enrich.assert_called_once()
+        from aegis.inventory import assess_inventory
+        self.assertEqual(assess_inventory(observation)["status"], "blocked")
+
+    def test_live_assessment_fails_closed_on_excessive_topology(self):
+        root = {"path": "/dev/vda", "type": "disk", "children": []}
+        cursor = root
+        for index in range(18):
+            child = {"path": f"/dev/vda{index + 1}", "type": "part", "children": []}
+            cursor["children"].append(child)
+            cursor = child
+        with patch("aegis.hardware.read_disks", return_value=[root]), \
+             patch("aegis.hardware._active_swap_devices") as swap, \
+             patch("aegis.hardware._enrich_block_node") as enrich:
+            result = read_assessment_observation()
+        self.assertTrue(result["devices"][0]["ambiguous"])
+        self.assertIsNone(result["devices"][0]["holders"])
+        self.assertIsNone(result["devices"][0]["active_swap"])
+        swap.assert_not_called()
+        enrich.assert_not_called()
+
+    def test_live_assessment_fails_closed_on_excessive_node_count(self):
+        root = {"path": "/dev/vda", "type": "disk",
+                "children": [{"path": f"/dev/vda{i}", "type": "part", "children": []}
+                             for i in range(4097)]}
+        with patch("aegis.hardware.read_disks", return_value=[root]), \
+             patch("aegis.hardware._active_swap_devices") as swap, \
+             patch("aegis.hardware._enrich_block_node") as enrich:
+            result = read_assessment_observation()
+        self.assertTrue(result["devices"][0]["ambiguous"])
+        swap.assert_not_called()
+        enrich.assert_not_called()
 
     @patch("aegis.hardware.shutil.which", return_value=None)
     def test_lsblk_required(self, _which):

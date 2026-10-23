@@ -80,6 +80,9 @@ def build_guest_install_spec(observation: dict[str, Any]) -> dict[str, Any]:
         raise InstallSpecError("Block device observations must be a list")
     if any(not isinstance(device, dict) for device in raw):
         raise InstallSpecError("Block device list contains a malformed observation")
+    unexpected = [d for d in raw if d.get("type") not in {"disk", "rom", "loop"}]
+    if unexpected:
+        raise InstallSpecError("Unexpected block-device root type is present")
     disks = [d for d in raw if d.get("type") == "disk"]
     roms = [d for d in raw if d.get("type") == "rom"]
     if len(disks) != 2:

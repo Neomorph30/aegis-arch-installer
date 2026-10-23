@@ -1,0 +1,82 @@
+name: Disposable Arch Live Boot Verification
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "lab/**"
+      - "docs/GUEST_INSTALL_ENGINE.md"
+      - "docs/RELEASE_GATES.md"
+      - ".github/workflows/arch-live-boot.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arch-live-boot-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  arch-live-boot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout reviewed source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c
+        with:
+          python-version: "3.12"
+      - name: Run preview security guardrail
+        run: python tools/security_lint.py
+      - name: Install unprivileged emulation and OCR dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            qemu-system-x86 ovmf swtpm tesseract-ocr xorriso
+      - name: Download ISO and official Arch checksum manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -m 700 "$RUNNER_TEMP/archiso"
+          cd "$RUNNER_TEMP/archiso"
+          curl --fail --silent --show-error --location \
+            --connect-timeout 20 --max-time 480 \
+            --output archlinux-x86_64.iso \
+            https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso
+          curl --fail --silent --show-error --location \
+            --connect-timeout 20 --max-time 60 \
+            --output sha256sums.txt \
+            https://archlinux.org/iso/latest/sha256sums.txt
+          line="$(grep -E '^[[:xdigit:]]{64}  archlinux-x86_64\.iso$' sha256sums.txt)"
+          test -n "$line"
+          printf '%s\n' "$line" | sha256sum --check --strict
+          digest="${line%% *}"
+          echo "ARCH_ISO_SHA256=$digest" >> "$GITHUB_ENV"
+      - name: Boot the verified Arch live environment in an isolated disposable VM
+        env:
+          ISO_PATH: ${{ runner.temp }}/archiso/archlinux-x86_64.iso
+          AEGIS_LAB_DIAGNOSTICS_DIR: ${{ runner.temp }}/aegis-boot-diagnostics
+        run: |
+          set -euo pipefail
+          mkdir -m 700 "$AEGIS_LAB_DIAGNOSTICS_DIR"
+          python -m lab --check
+          # The lab builds its helper ISO directly from the reviewed guest gate source.
+          # The live preflight needs no networking; keep the guest NIC disabled.
+          python -m lab --smoke \
+            --observe-guest-preflight \
+            --live-timeout-seconds 480 \
+            --seconds 3 \
+            --network-mode disabled \
+            --iso "$ISO_PATH" \
+            --iso-sha256 "$ARCH_ISO_SHA256"
+      - name: Upload final guest screen when boot verification fails
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: aegis-arch-boot-diagnostics
+          path: ${{ runner.temp }}/aegis-boot-diagnostics/guest-screen.png
+          if-no-files-found: ignore
+          retention-days: 3

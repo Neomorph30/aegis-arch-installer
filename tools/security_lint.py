@@ -12,6 +12,10 @@ import sys
 from pathlib import Path
 
 APPROVED_SUBPROCESS_MODULES = frozenset({"hardware.py", "network.py"})
+APPROVED_SUBPROCESS_PATHS = frozenset({"aegis/hardware.py", "aegis/network.py"})
+APPROVED_LAB_SUBPROCESS_MODULES = frozenset({
+    "lab/runtime.py", "lab/guest_probe.py", "lab/guest_storage_gate.py",
+})
 FORBIDDEN_MODULES = frozenset({"ctypes", "pty"})
 FORBIDDEN_CALLS = frozenset({
     "os.system", "os.popen", "os.fork", "os.execv", "os.execve", "os.spawnv",
@@ -28,6 +32,19 @@ def _call_name(node: ast.AST) -> str | None:
         parent = _call_name(node.value)
         return f"{parent}.{node.attr}" if parent else None
     return None
+
+
+def _subprocess_allowed(filename: str) -> bool:
+    """Allow subprocess only in exact audited source paths."""
+    normalized = filename.replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    if normalized.startswith("lab/"):
+        return normalized in APPROVED_LAB_SUBPROCESS_MODULES
+    if "/" in normalized:
+        return normalized in APPROVED_SUBPROCESS_PATHS
+    # Bare module names are retained for direct unit tests of the checker.
+    return normalized in APPROVED_SUBPROCESS_MODULES
 
 
 def check_source(source: str, filename: str) -> list[str]:
@@ -57,7 +74,7 @@ def check_source(source: str, filename: str) -> list[str]:
         prefix = f"{filename}:{line}"
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name == "subprocess" and name not in APPROVED_SUBPROCESS_MODULES:
+                if alias.name == "subprocess" and not _subprocess_allowed(filename):
                     errors.append(f"{prefix}: subprocess import not allowlisted")
                 if alias.name.split(".")[0] in FORBIDDEN_MODULES:
                     errors.append(f"{prefix}: forbidden module import {alias.name}")
@@ -90,7 +107,7 @@ def check_source(source: str, filename: str) -> list[str]:
             if called in FORBIDDEN_CALLS:
                 errors.append(f"{prefix}: forbidden direct execution {called}")
             if called and called.startswith("subprocess."):
-                if name not in APPROVED_SUBPROCESS_MODULES or called != "subprocess.run":
+                if not _subprocess_allowed(filename) or called != "subprocess.run":
                     errors.append(f"{prefix}: subprocess call {called} not allowlisted")
             if called and called.startswith("os.exec"):
                 errors.append(f"{prefix}: os.exec family forbidden")
@@ -112,6 +129,14 @@ def run_check(root: Path) -> list[str]:
         return [f"{package}: source package missing"]
     for source in sorted(package.rglob("*.py")):
         errors.extend(check_source(source.read_text(encoding="utf-8"), str(source.relative_to(root))))
+    # The lab contains controlled QEMU/read-only probe subprocesses; scan it too,
+    # with a separate path-specific allowlist so new executor-like code cannot bypass preview checks.
+    lab = root / "lab"
+    if not lab.is_dir():
+        errors.append(f"{lab}: lab package missing")
+    else:
+        for source in sorted(lab.rglob("*.py")):
+            errors.extend(check_source(source.read_text(encoding="utf-8"), str(source.relative_to(root))))
     # CI supply-chain contract: pinned upstream actions and no writable tokens.
     workflow_dir = root / ".github" / "workflows"
     if not workflow_dir.is_dir():
@@ -135,6 +160,11 @@ def run_check(root: Path) -> list[str]:
                 errors.append(f"{display}: checkout credentials must not persist")
             if "tools/security_lint.py" not in data:
                 errors.append(f"{display}: preview guardrail must run in CI")
+            if workflow.name == "arch-live-boot.yml":
+                if "--network-mode disabled" not in data:
+                    errors.append(f"{display}: live preflight must run with guest networking disabled")
+                if "--network-mode user-nat-explicit" in data:
+                    errors.append(f"{display}: live preflight must not enable guest NAT")
     return errors
 
 

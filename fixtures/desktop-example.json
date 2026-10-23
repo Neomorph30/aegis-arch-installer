@@ -7,38 +7,96 @@
   "tpm_device_detected": true,
   "tpm_version": "2.0-detected-unverified",
   "secure_boot_state": "enabled-reported",
-  "gpu_devices": ["01:00.0 VGA compatible controller [0300]: NVIDIA Corporation Example RTX GPU [10de:ffff]"],
+  "gpu_devices": [
+    "01:00.0 VGA compatible controller [0300]: NVIDIA Corporation Example RTX GPU [10de:ffff]"
+  ],
   "disks": [
     {
-      "name": "nvme0n1", "path": "/dev/nvme0n1", "type": "disk",
-      "size": 1000204886016, "model": "Demo NVMe 1TB", "serial": "EXAMPLE-NVME-0001",
-      "wwn": "example-wwn-nvme", "tran": "nvme", "rm": false, "ro": false, "hotplug": false,
-      "mountpoints": [null],
+      "name": "nvme0n1",
+      "path": "/dev/nvme0n1",
+      "type": "disk",
+      "size": 1000204886016,
+      "model": "Demo NVMe 1TB",
+      "serial": "EXAMPLE-NVME-0001",
+      "wwn": "example-wwn-nvme",
+      "tran": "nvme",
+      "rm": false,
+      "ro": false,
+      "hotplug": false,
+      "mountpoints": [
+        null
+      ],
       "children": [
-        {"path": "/dev/nvme0n1p1", "type": "part", "size": 1073741824,
-         "fstype": "vfat", "mountpoints": [null]}
+        {
+          "path": "/dev/nvme0n1p1",
+          "type": "part",
+          "size": 1073741824,
+          "fstype": "vfat",
+          "mountpoints": [
+            null
+          ],
+          "children": []
+        }
       ]
     },
     {
-      "name": "sda", "path": "/dev/sda", "type": "disk",
-      "size": 2000398934016, "model": "Demo SATA 2TB", "serial": "EXAMPLE-SATA-0002",
-      "wwn": "example-wwn-sata", "tran": "sata", "rm": false, "ro": false, "hotplug": false,
-      "mountpoints": [null],
+      "name": "sda",
+      "path": "/dev/sda",
+      "type": "disk",
+      "size": 2000398934016,
+      "model": "Demo SATA 2TB",
+      "serial": "EXAMPLE-SATA-0002",
+      "wwn": "example-wwn-sata",
+      "tran": "sata",
+      "rm": false,
+      "ro": false,
+      "hotplug": false,
+      "mountpoints": [
+        null
+      ],
       "children": [
-        {"path": "/dev/sda1", "type": "part", "size": 1998990000000,
-         "fstype": "crypto_LUKS", "mountpoints": [null]}
+        {
+          "path": "/dev/sda1",
+          "type": "part",
+          "size": 1998990000000,
+          "fstype": "crypto_LUKS",
+          "mountpoints": [
+            null
+          ],
+          "children": []
+        }
       ]
     },
     {
-      "name": "sdb", "path": "/dev/sdb", "type": "disk",
-      "size": 16000000000, "model": "DEMO ARCH INSTALLER USB", "serial": "EXAMPLE-USB-0003",
-      "wwn": null, "tran": "usb", "rm": true, "ro": false, "hotplug": true,
-      "mountpoints": [null],
+      "name": "sdb",
+      "path": "/dev/sdb",
+      "type": "disk",
+      "size": 16000000000,
+      "model": "DEMO ARCH INSTALLER USB",
+      "serial": "EXAMPLE-USB-0003",
+      "wwn": null,
+      "tran": "usb",
+      "rm": true,
+      "ro": false,
+      "hotplug": true,
+      "mountpoints": [
+        null
+      ],
       "children": [
-        {"path": "/dev/sdb1", "type": "part", "size": 14000000000,
-         "fstype": "iso9660", "mountpoints": ["/run/archiso/bootmnt"]}
+        {
+          "path": "/dev/sdb1",
+          "type": "part",
+          "size": 14000000000,
+          "fstype": "iso9660",
+          "mountpoints": [
+            "/run/archiso/bootmnt"
+          ],
+          "children": []
+        }
       ]
     }
   ],
-  "notes": ["Entire inventory is fictional. Device paths may not exist."]
+  "notes": [
+    "Entire inventory is fictional. Device paths may not exist."
+  ]
 }
