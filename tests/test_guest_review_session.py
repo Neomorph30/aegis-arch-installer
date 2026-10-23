@@ -22,13 +22,13 @@ def sample():
         "environment": {"sys_vendor": "QEMU", "product_name": "Standard PC Q35"},
         "network_mode": "disabled", "active_swaps": [],
         "devices": [
-            {"path": "/dev/vda", "type": "disk", "serial": "AEGIS-LAB-PRIMARY",
+            {"path": "/dev/vda", "major_minor": "252:0", "type": "disk", "serial": "AEGIS-LAB-PRIMARY",
              "size_bytes": 24 * 1024**3, "read_only": False, "mountpoints": [],
              "holders": [], "active_swap": False, "children": []},
-            {"path": "/dev/vdb", "type": "disk", "serial": "AEGIS-LAB-SECONDARY",
+            {"path": "/dev/vdb", "major_minor": "252:16", "type": "disk", "serial": "AEGIS-LAB-SECONDARY",
              "size_bytes": 8 * 1024**3, "read_only": True, "mountpoints": [],
              "holders": [], "active_swap": False, "children": []},
-            {"path": "/dev/sr0", "type": "rom", "read_only": True},
+            {"path": "/dev/sr0", "major_minor": "11:0", "type": "rom", "read_only": True, "children": []},
         ],
     }
 
@@ -117,6 +117,19 @@ class GuestReviewSessionTests(unittest.TestCase):
         self.assertEqual(result["status"], "BLOCKED")
         self.assertEqual(self.journal.read()[-1]["phase"], "explicit_target_review")
         self.assertEqual(self.journal.read()[-1]["status"], "FAILED")
+
+    def test_kernel_identity_change_after_confirmation_blocks(self):
+        original = sample()
+        changed = sample()
+        changed["devices"][0]["major_minor"] = "252:99"
+        values = iter([original, original, original, changed])
+        result = run_review_session(self.journal, probe=lambda: copy.deepcopy(next(values)),
+                                    confirm=lambda plan, phrase: phrase)
+        self.assertEqual(result["status"], "BLOCKED")
+        self.assertEqual(self.journal.read()[-1]["phase"], "explicit_target_review")
+        self.assertEqual(self.journal.read()[-1]["status"], "FAILED")
+        self.assertFalse(result["execution_enabled"])
+        self.assertFalse(result["disk_changes_performed"])
 
 
 if __name__ == "__main__":

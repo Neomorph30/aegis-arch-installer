@@ -16,9 +16,16 @@ from lab.guest_storage_gate import (
 
 
 def node(path, serial, size, *, ro=False, children=None, mountpoints=None,
-         holders=None, active_swap=False, ambiguous=False, removable=False):
+         holders=None, active_swap=False, ambiguous=False, removable=False, major_minor=None):
+    if major_minor is None:
+        major_minor = {
+            "/dev/vda": "252:0",
+            "/dev/vdb": "252:1",
+            "/dev/vda1": "252:2",
+        }.get(path, "253:0")
     return {
         "path": path,
+        "major_minor": major_minor,
         "type": "disk",
         "serial": serial,
         "size": size,
@@ -148,7 +155,7 @@ class GuestStorageGateTests(unittest.TestCase):
                 validate_lab_primary(sample)
 
     @patch("pathlib.Path.iterdir", return_value=[])
-    @patch("pathlib.Path.read_text", return_value="Filename Type Size Used Priority\\n")
+    @patch("pathlib.Path.read_text", return_value="Filename Type Size Used Priority\n")
     @patch("subprocess.run")
     def test_live_observer_normalizes_lsblk_and_reads_sysfs(self, run, read_text, iterdir):
         import json
@@ -184,7 +191,7 @@ class GuestStorageGateTests(unittest.TestCase):
         self.assertNotIn("CHILDREN", lsblk_command[lsblk_command.index("--output") + 1])
         iterdir.assert_called()
 
-    @patch("pathlib.Path.read_text", return_value="Filename Type Size Used Priority\\n")
+    @patch("pathlib.Path.read_text", return_value="Filename Type Size Used Priority\n")
     @patch("subprocess.run")
     def test_live_observer_rejects_deep_or_oversized_raw_tree_before_enrichment(self, run, _swaps):
         import json
@@ -243,6 +250,33 @@ class GuestStorageGateTests(unittest.TestCase):
         self.assertFalse(result["write_authorized"])
         self.assertFalse(result["writes_performed"])
 
+    def test_duplicate_kernel_major_minor_identity_blocks_even_with_distinct_paths(self):
+        sample = fixture()
+        sample["devices"][1]["major_minor"] = sample["devices"][0]["major_minor"]
+        with self.assertRaisesRegex(GuestStorageGateError, "Duplicate kernel major/minor identity"):
+            validate_lab_primary(sample)
+        sample = fixture()
+        sample["devices"][1]["major_minor"] = "0252:000"
+        with self.assertRaisesRegex(GuestStorageGateError, "Duplicate kernel major/minor identity"):
+            validate_lab_primary(sample)
+
+    def test_missing_or_malformed_kernel_identity_blocks(self):
+        for value in (None, "252", "252:0:extra", "x:0", ""):
+            sample = fixture()
+            sample["devices"][0]["major_minor"] = value
+            with self.subTest(value=value), self.assertRaisesRegex(
+                GuestStorageGateError, "Missing or malformed kernel device identity"
+            ):
+                validate_lab_primary(sample)
+
+    def test_duplicate_kernel_identity_in_nested_topology_blocks(self):
+        sample = fixture()
+        child = node("/dev/vda1", None, PRIMARY_BYTES - 1024**3, major_minor="252:0")
+        child["type"] = "part"
+        sample["devices"][0]["children"] = [child]
+        with self.assertRaisesRegex(GuestStorageGateError, "Duplicate kernel major/minor identity"):
+            validate_lab_primary(sample)
+
     def test_duplicate_paths_and_incomplete_topology_block(self):
         sample = fixture()
         sample["devices"][1]["path"] = sample["devices"][0]["path"]
@@ -260,6 +294,89 @@ class GuestStorageGateTests(unittest.TestCase):
         sample["devices"][0].pop("children")
         with self.assertRaisesRegex(GuestStorageGateError, "Incomplete child topology"):
             validate_lab_primary(sample)
+
+
+    @patch("subprocess.run", side_effect=OSError("lsblk unavailable"))
+    def test_live_observer_blocks_when_lsblk_cannot_run(self, run):
+        from lab.guest_storage_gate import observe_guest_storage
+        with self.assertRaisesRegex(GuestStorageGateError, "fresh complete lsblk"):
+            observe_guest_storage()
+        run.assert_called_once()
+
+    @patch("subprocess.run", return_value=SimpleNamespace(stdout="{not-json"))
+    def test_live_observer_blocks_malformed_lsblk_json(self, run):
+        from lab.guest_storage_gate import observe_guest_storage
+        with self.assertRaisesRegex(GuestStorageGateError, "fresh complete lsblk"):
+            observe_guest_storage()
+        run.assert_called_once()
+
+    @patch("subprocess.run", return_value=SimpleNamespace(stdout='{"unexpected": []}'))
+    def test_live_observer_blocks_missing_blockdevices_list(self, run):
+        from lab.guest_storage_gate import observe_guest_storage
+        with self.assertRaisesRegex(GuestStorageGateError, "lsblk response is incomplete"):
+            observe_guest_storage()
+
+    def _observer_payload(self):
+        return {"blockdevices": [
+            {"path": "/dev/vda", "type": "disk", "serial": "AEGIS-LAB-PRIMARY",
+             "size": PRIMARY_BYTES, "ro": False, "rm": False,
+             "mountpoints": [None], "maj:min": "252:0"},
+            {"path": "/dev/vdb", "type": "disk", "serial": "AEGIS-LAB-SECONDARY",
+             "size": SECONDARY_BYTES, "ro": True, "rm": False,
+             "mountpoints": [None], "maj:min": "252:1"},
+        ]}
+
+    @patch("pathlib.Path.read_text", side_effect=PermissionError("cannot read swaps"))
+    @patch("subprocess.run")
+    def test_live_observer_blocks_when_swap_state_cannot_be_read(self, run, swaps):
+        import json
+        from lab.guest_storage_gate import observe_guest_storage
+        run.return_value = SimpleNamespace(stdout=json.dumps(self._observer_payload()))
+        with self.assertRaisesRegex(GuestStorageGateError, "verify active swap"):
+            observe_guest_storage()
+
+    @patch("pathlib.Path.iterdir", side_effect=PermissionError("cannot inspect holders"))
+    @patch("pathlib.Path.read_text", return_value="Filename Type Size Used Priority\n")
+    @patch("subprocess.run")
+    def test_live_observer_blocks_when_sysfs_holders_cannot_be_read(self, run, swaps, iterdir):
+        import json
+        from lab.guest_storage_gate import observe_guest_storage
+        run.return_value = SimpleNamespace(stdout=json.dumps(self._observer_payload()))
+        with self.assertRaisesRegex(GuestStorageGateError, "verify sysfs holders"):
+            observe_guest_storage()
+
+    @patch("pathlib.Path.read_text", return_value="Filename Type Size Used Priority\n")
+    @patch("subprocess.run")
+    def test_live_observer_blocks_missing_kernel_device_identity(self, run, swaps):
+        import json
+        from lab.guest_storage_gate import observe_guest_storage
+        payload = self._observer_payload()
+        del payload["blockdevices"][0]["maj:min"]
+        run.return_value = SimpleNamespace(stdout=json.dumps(payload))
+        with self.assertRaisesRegex(GuestStorageGateError, "major/minor identity is missing"):
+            observe_guest_storage()
+
+    @patch("pathlib.Path.iterdir", return_value=[])
+    @patch("pathlib.Path.read_text", return_value=(
+        "Filename Type Size Used Priority\n/dev/vda partition 1024 0 -2\n"
+    ))
+    @patch("os.stat")
+    @patch("subprocess.run")
+    def test_live_observer_detects_active_block_swap_by_major_minor(
+        self, run, stat_call, swaps, iterdir
+    ):
+        import json
+        import os
+        import stat
+        from lab.guest_storage_gate import observe_guest_storage
+        run.return_value = SimpleNamespace(stdout=json.dumps(self._observer_payload()))
+        stat_call.return_value = SimpleNamespace(
+            st_mode=stat.S_IFBLK, st_rdev=os.makedev(252, 0)
+        )
+        observed = observe_guest_storage()
+        self.assertTrue(observed["devices"][0]["active_swap"])
+        with self.assertRaisesRegex(GuestStorageGateError, "Active or unknown swap"):
+            validate_lab_primary(observed)
 
 
 if __name__ == "__main__":

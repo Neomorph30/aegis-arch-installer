@@ -6,6 +6,8 @@ import hmac
 import json
 from typing import Any
 
+from lab.device_tree import DeviceTreeValidationError, validate_device_forest
+
 
 class InstallSpecError(ValueError):
     """A guest installation specification failed closed preflight."""
@@ -83,6 +85,27 @@ def build_guest_install_spec(observation: dict[str, Any]) -> dict[str, Any]:
     unexpected = [d for d in raw if d.get("type") not in {"disk", "rom", "loop"}]
     if unexpected:
         raise InstallSpecError("Unexpected block-device root type is present")
+
+    try:
+        validate_device_forest(raw, require_children=True)
+    except DeviceTreeValidationError as exc:
+        raise InstallSpecError(str(exc)) from exc
+
+    kernel_identities: set[tuple[int, int]] = set()
+    for root in raw:
+        for node in _walk(root):
+            identity_text = node.get("major_minor")
+            if not isinstance(identity_text, str) or identity_text.count(":") != 1:
+                raise InstallSpecError("Kernel major/minor identity is missing or malformed")
+            major_text, minor_text = identity_text.split(":", 1)
+            if not major_text.isdecimal() or not minor_text.isdecimal():
+                raise InstallSpecError("Kernel major/minor identity is missing or malformed")
+            identity = (int(major_text), int(minor_text))
+            if identity_text != f"{identity[0]}:{identity[1]}":
+                raise InstallSpecError("Kernel major/minor identity is not canonical")
+            if identity in kernel_identities:
+                raise InstallSpecError("Duplicate kernel major/minor identity; device paths may alias")
+            kernel_identities.add(identity)
     disks = [d for d in raw if d.get("type") == "disk"]
     roms = [d for d in raw if d.get("type") == "rom"]
     if len(disks) != 2:
@@ -116,6 +139,14 @@ def build_guest_install_spec(observation: dict[str, Any]) -> dict[str, Any]:
         for node in _walk(disk):
             if _mountpoints(node):
                 raise InstallSpecError("A partition in the lab disk tree is mounted")
+            node_holders = node.get("holders")
+            node_swap = node.get("active_swap")
+            if not isinstance(node_holders, list) or any(not isinstance(item, str) for item in node_holders):
+                raise InstallSpecError("Device-tree holder state is missing or malformed")
+            if not isinstance(node_swap, bool):
+                raise InstallSpecError("Device-tree active-swap state is missing or malformed")
+            if node_holders or node_swap:
+                raise InstallSpecError("A device in the lab disk tree is held or active as swap")
     if not any(d.get("path") == BOOT_PATH and d.get("type") == "rom" and d.get("read_only") is True for d in roms):
         raise InstallSpecError("A separate read-only boot medium was not verified")
     swaps = observation.get("active_swaps", [])
@@ -136,7 +167,16 @@ def build_guest_install_spec(observation: dict[str, Any]) -> dict[str, Any]:
             "path": PRIMARY_PATH,
             "serial": PRIMARY_SERIAL,
             "size_bytes": size,
+            "major_minor": primary["major_minor"],
             "secondary_policy": "PRESERVE",
+        },
+        "secondary_device": {
+            "path": SECONDARY_PATH,
+            "serial": SECONDARY_SERIAL,
+            "size_bytes": secondary_size,
+            "major_minor": secondary["major_minor"],
+            "read_only": True,
+            "policy": "PRESERVE",
         },
         "layout": [
             {"label": "AEGIS_EFI", "size_bytes": EFI_BYTES, "filesystem": "FAT32",

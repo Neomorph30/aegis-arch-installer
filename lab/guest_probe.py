@@ -6,7 +6,9 @@ from pathlib import Path
 import subprocess
 from typing import Any, Callable
 
-LSBLK_FIELDS = "NAME,PATH,TYPE,SIZE,SERIAL,RO,MOUNTPOINTS,PKNAME,PARTTYPE,PARTLABEL"
+from lab.device_tree import DeviceTreeValidationError, validate_device_forest
+
+LSBLK_FIELDS = "NAME,PATH,TYPE,SIZE,SERIAL,RO,MOUNTPOINTS,PKNAME,PARTTYPE,PARTLABEL,MAJ:MIN"
 
 
 class GuestProbeError(RuntimeError):
@@ -38,10 +40,16 @@ def _run_lsblk(run: Callable[..., Any] = subprocess.run) -> str:
 
 
 def _mountpoints(node: dict[str, Any]) -> list[str]:
-    value = node.get("mountpoints") or []
+    if "mountpoints" not in node:
+        raise GuestProbeError("Mountpoint data is missing from lsblk")
+    value = node["mountpoints"]
+    if value is None:
+        return []
     if isinstance(value, str):
         value = [value]
-    if not isinstance(value, list):
+    if not isinstance(value, list) or any(
+        entry is not None and not isinstance(entry, str) for entry in value
+    ):
         raise GuestProbeError("Malformed mountpoint data from lsblk")
     return [entry for entry in value if isinstance(entry, str) and entry.strip()]
 
@@ -53,10 +61,23 @@ def _normalize(node: Any, sys_root: Path, swaps: set[str]) -> dict[str, Any]:
     if not isinstance(path, str) or not path.startswith("/dev/"):
         raise GuestProbeError("Device node has no valid path; refresh discovery")
     name = path.removeprefix("/dev/")
+    raw_major_minor = node.get("maj:min")
+    if not isinstance(raw_major_minor, str) or raw_major_minor.count(":") != 1:
+        raise GuestProbeError("Device node has no valid kernel major/minor identity; refresh discovery")
+    try:
+        major_text, minor_text = raw_major_minor.split(":", 1)
+        if not major_text.isdecimal() or not minor_text.isdecimal():
+            raise ValueError("non-decimal identity")
+        major_minor = f"{int(major_text)}:{int(minor_text)}"
+    except ValueError as exc:
+        raise GuestProbeError("Device node has malformed kernel major/minor identity") from exc
     size = node.get("size")
-    if size is not None and (isinstance(size, bool) or not isinstance(size, int)):
-        raise GuestProbeError("Device size is malformed")
-    raw_children = node.get("children") or []
+    if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+        raise GuestProbeError("Device size is missing or malformed")
+    raw_ro = node.get("ro")
+    if type(raw_ro) not in (bool, int) or raw_ro not in (0, 1):
+        raise GuestProbeError("Device read-only flag is missing or malformed")
+    raw_children = node.get("children", [])
     if not isinstance(raw_children, list):
         raise GuestProbeError("Device children are malformed")
     holders_dir = sys_root / "class" / "block" / name / "holders"
@@ -67,10 +88,11 @@ def _normalize(node: Any, sys_root: Path, swaps: set[str]) -> dict[str, Any]:
         holders = ["UNVERIFIED"]
     normalized = {
         "path": path,
+        "major_minor": major_minor,
         "type": node.get("type"),
         "serial": node.get("serial"),
         "size_bytes": size,
-        "read_only": node.get("ro") in (1, True, "1"),
+        "read_only": bool(raw_ro),
         "mountpoints": _mountpoints(node),
         "holders": holders,
         "active_swap": path in swaps,
@@ -154,12 +176,19 @@ def observe_guest(
         if fields:
             swaps.add(fields[0])
 
-    devices = []
+    raw_roots = []
     for node in parsed["blockdevices"]:
         if not isinstance(node, dict):
             raise GuestProbeError("Malformed top-level lsblk node")
         if node.get("type") in ("disk", "rom"):
-            devices.append(_normalize(node, sys_path, swaps))
+            raw_roots.append(node)
+
+    try:
+        validate_device_forest(raw_roots, require_children=False)
+    except DeviceTreeValidationError as exc:
+        raise GuestProbeError(str(exc)) from exc
+
+    devices = [_normalize(node, sys_path, swaps) for node in raw_roots]
 
     network_mode = _network_mode(sys_path, run)
 

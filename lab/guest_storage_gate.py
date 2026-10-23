@@ -14,6 +14,7 @@ PRIMARY_BYTES = 24 * 1024**3
 SECONDARY_SERIAL = "AEGIS-LAB-SECONDARY"
 SECONDARY_BYTES = 8 * 1024**3
 _DEVICE_PATH = re.compile(r"^/dev/[A-Za-z0-9_.!:+-]+(?:/[A-Za-z0-9_.!:+-]+)*$")
+_MAJOR_MINOR = re.compile(r"^[0-9]+:[0-9]+$")
 
 
 class GuestStorageGateError(ValueError):
@@ -36,6 +37,7 @@ def validate_lab_primary(observation: dict[str, Any]) -> dict[str, Any]:
 
     all_nodes: list[dict[str, Any]] = []
     paths: set[str] = set()
+    kernel_identities: set[tuple[int, int]] = set()
     serial_matches: list[dict[str, Any]] = []
 
     def visit(node: Any, depth: int = 0) -> None:
@@ -59,6 +61,14 @@ def validate_lab_primary(observation: dict[str, Any]) -> dict[str, Any]:
             flag_value = node.get(flag)
             if type(flag_value) not in (bool, int) or flag_value not in (0, 1):
                 raise GuestStorageGateError(f"Unverified {flag} flag on {path}")
+        major_minor = node.get("major_minor")
+        if not isinstance(major_minor, str) or not _MAJOR_MINOR.fullmatch(major_minor):
+            raise GuestStorageGateError(f"Missing or malformed kernel device identity on {path}")
+        major_text, minor_text = major_minor.split(":", 1)
+        identity = (int(major_text), int(minor_text))
+        if identity in kernel_identities:
+            raise GuestStorageGateError("Duplicate kernel major/minor identity; device paths may alias the same block device")
+        kernel_identities.add(identity)
         paths.add(path)
         all_nodes.append(node)
         if kind == "disk" and node.get("serial") == PRIMARY_SERIAL:
@@ -252,6 +262,7 @@ def observe_guest_storage() -> dict[str, Any]:
             raise GuestStorageGateError(f"Unable to verify type for {path}")
         return {
             "path": path,
+            "major_minor": f"{identity[0]}:{identity[1]}",
             "type": kind,
             "serial": serial,
             "size": node["size"],
