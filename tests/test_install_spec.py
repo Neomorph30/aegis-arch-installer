@@ -19,13 +19,13 @@ def observation():
         "network_mode": "disabled",
         "active_swaps": [],
         "devices": [
-            {"path": "/dev/vda", "type": "disk", "serial": "AEGIS-LAB-PRIMARY",
+            {"path": "/dev/vda", "major_minor": "252:0", "type": "disk", "serial": "AEGIS-LAB-PRIMARY",
              "size_bytes": 24 * 1024**3, "read_only": False, "mountpoints": [],
              "holders": [], "active_swap": False, "children": []},
-            {"path": "/dev/vdb", "type": "disk", "serial": "AEGIS-LAB-SECONDARY",
+            {"path": "/dev/vdb", "major_minor": "252:16", "type": "disk", "serial": "AEGIS-LAB-SECONDARY",
              "size_bytes": 8 * 1024**3, "read_only": True, "mountpoints": [],
              "holders": [], "active_swap": False, "children": []},
-            {"path": "/dev/sr0", "type": "rom", "read_only": True},
+            {"path": "/dev/sr0", "major_minor": "11:0", "type": "rom", "read_only": True, "children": []},
         ],
     }
 
@@ -45,6 +45,18 @@ class GuestInstallSpecTests(unittest.TestCase):
         spec = build_guest_install_spec(observation())
         spec["target"]["path"] = "/dev/vdb"
         self.assertFalse(verify_guest_install_spec(spec))
+
+    def test_duplicate_kernel_device_identity_is_rejected(self):
+        obs = observation()
+        obs["devices"][1]["major_minor"] = obs["devices"][0]["major_minor"]
+        with self.assertRaisesRegex(InstallSpecError, "Duplicate kernel major/minor identity"):
+            build_guest_install_spec(obs)
+
+    def test_missing_kernel_device_identity_is_rejected(self):
+        obs = observation()
+        obs["devices"][0].pop("major_minor")
+        with self.assertRaisesRegex(InstallSpecError, "Kernel major/minor identity"):
+            build_guest_install_spec(obs)
 
     def test_non_qemu_environment_rejected(self):
         obs = observation()
@@ -68,7 +80,7 @@ class GuestInstallSpecTests(unittest.TestCase):
     def test_extra_disk_rejected(self):
         obs = observation()
         extra = copy.deepcopy(obs["devices"][0])
-        extra.update(path="/dev/vdc", serial="UNEXPECTED")
+        extra.update(path="/dev/vdc", major_minor="252:32", serial="UNEXPECTED")
         obs["devices"].append(extra)
         with self.assertRaisesRegex(InstallSpecError, "exactly two lab disks"):
             build_guest_install_spec(obs)
@@ -76,9 +88,37 @@ class GuestInstallSpecTests(unittest.TestCase):
     def test_mounted_child_rejected(self):
         obs = observation()
         obs["devices"][0]["children"] = [
-            {"path": "/dev/vda1", "type": "part", "mountpoints": ["/mnt/host-data"], "children": []}
+            {"path": "/dev/vda1", "major_minor": "252:1", "type": "part", "mountpoints": ["/mnt/host-data"], "children": []}
         ]
         with self.assertRaisesRegex(InstallSpecError, "partition"):
+            build_guest_install_spec(obs)
+
+
+    def test_child_holder_state_rejected(self):
+        obs = observation()
+        obs["devices"][0]["children"] = [{
+            "path": "/dev/vda1", "major_minor": "252:1", "type": "part",
+            "mountpoints": [], "holders": ["dm-0"], "active_swap": False, "children": [],
+        }]
+        with self.assertRaisesRegex(InstallSpecError, "held or active as swap"):
+            build_guest_install_spec(obs)
+
+    def test_child_active_swap_rejected(self):
+        obs = observation()
+        obs["devices"][0]["children"] = [{
+            "path": "/dev/vda1", "major_minor": "252:1", "type": "part",
+            "mountpoints": [], "holders": [], "active_swap": True, "children": [],
+        }]
+        with self.assertRaisesRegex(InstallSpecError, "held or active as swap"):
+            build_guest_install_spec(obs)
+
+    def test_child_holder_state_must_be_present(self):
+        obs = observation()
+        obs["devices"][0]["children"] = [{
+            "path": "/dev/vda1", "major_minor": "252:1", "type": "part",
+            "mountpoints": [], "active_swap": False, "children": [],
+        }]
+        with self.assertRaisesRegex(InstallSpecError, "Device-tree holder state"):
             build_guest_install_spec(obs)
 
     def test_active_swap_rejected(self):
@@ -147,6 +187,26 @@ class GuestInstallSpecTests(unittest.TestCase):
         with self.assertRaisesRegex(InstallSpecError, "Network mode"):
             build_guest_install_spec(obs)
 
+
+    def test_device_tree_depth_limit_is_enforced_before_walk(self):
+        obs = observation()
+        node = obs["devices"][0]
+        for _ in range(17):
+            child = {"children": []}
+            node["children"] = [child]
+            node = child
+
+        with self.assertRaisesRegex(InstallSpecError, "maximum depth"):
+            build_guest_install_spec(obs)
+
+    def test_device_tree_node_limit_is_enforced_across_roots(self):
+        obs = observation()
+        obs["devices"][0]["children"] = [
+            {"children": []} for _ in range(4094)
+        ]
+
+        with self.assertRaisesRegex(InstallSpecError, "maximum node count"):
+            build_guest_install_spec(obs)
 
 if __name__ == "__main__":
     unittest.main()
