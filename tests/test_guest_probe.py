@@ -13,13 +13,13 @@ from lab.guest_probe import GuestProbeError, observe_guest
 
 def lsblk_data():
     return {"blockdevices": [
-        {"name": "vda", "path": "/dev/vda", "type": "disk", "size": 25769803776,
+        {"name": "vda", "path": "/dev/vda", "maj:min": "252:0", "type": "disk", "size": 25769803776,
          "serial": "AEGIS-LAB-PRIMARY", "ro": 0, "mountpoints": [None],
-         "children": [{"name": "vda1", "path": "/dev/vda1", "type": "part",
+         "children": [{"name": "vda1", "path": "/dev/vda1", "maj:min": "252:1", "type": "part",
                        "size": 4294967296, "serial": None, "ro": 0, "mountpoints": [None]}]},
-        {"name": "vdb", "path": "/dev/vdb", "type": "disk", "size": 8589934592,
+        {"name": "vdb", "path": "/dev/vdb", "maj:min": "252:16", "type": "disk", "size": 8589934592,
          "serial": "AEGIS-LAB-SECONDARY", "ro": 1, "mountpoints": [None]},
-        {"name": "sr0", "path": "/dev/sr0", "type": "rom", "size": 0,
+        {"name": "sr0", "path": "/dev/sr0", "maj:min": "11:0", "type": "rom", "size": 0,
          "serial": "ARCH-ISO", "ro": 1, "mountpoints": ["/run/archiso/bootmnt"]},
         {"name": "loop0", "path": "/dev/loop0", "type": "loop", "size": 1000},
     ]}
@@ -61,6 +61,53 @@ class GuestProbeTests(unittest.TestCase):
         self.assertEqual(command[0], "lsblk")
         self.assertFalse(kwargs.get("shell", False))
         self.assertEqual(kwargs["timeout"], 8)
+
+
+    def test_invalid_readonly_flag_fails_closed(self):
+        for bad in (None, "unknown", "1", 2, -1):
+            data = lsblk_data()
+            data["blockdevices"][0]["ro"] = bad
+            with self.subTest(value=bad), self.assertRaisesRegex(GuestProbeError, "read-only flag"):
+                observe_guest(
+                    sys_root=self.sys, proc_root=self.proc,
+                    run=lambda *args, _data=data, **kwargs: SimpleNamespace(stdout=json.dumps(_data)),
+                )
+
+    def test_missing_mountpoints_fails_closed(self):
+        data = lsblk_data()
+        del data["blockdevices"][0]["mountpoints"]
+        with self.assertRaisesRegex(GuestProbeError, "Mountpoint data is missing"):
+            observe_guest(
+                sys_root=self.sys, proc_root=self.proc,
+                run=lambda *args, **kwargs: SimpleNamespace(stdout=json.dumps(data)),
+            )
+
+    def test_malformed_mountpoint_entry_fails_closed(self):
+        data = lsblk_data()
+        data["blockdevices"][0]["mountpoints"] = [42]
+        with self.assertRaisesRegex(GuestProbeError, "Malformed mountpoint"):
+            observe_guest(
+                sys_root=self.sys, proc_root=self.proc,
+                run=lambda *args, **kwargs: SimpleNamespace(stdout=json.dumps(data)),
+            )
+
+    def test_missing_device_capacity_fails_closed(self):
+        data = lsblk_data()
+        del data["blockdevices"][0]["size"]
+        with self.assertRaisesRegex(GuestProbeError, "size is missing or malformed"):
+            observe_guest(
+                sys_root=self.sys, proc_root=self.proc,
+                run=lambda *args, **kwargs: SimpleNamespace(stdout=json.dumps(data)),
+            )
+
+    def test_missing_kernel_device_identity_fails_closed(self):
+        data = lsblk_data()
+        del data["blockdevices"][0]["maj:min"]
+        with self.assertRaisesRegex(GuestProbeError, "kernel major/minor identity"):
+            observe_guest(
+                sys_root=self.sys, proc_root=self.proc,
+                run=lambda *args, **kwargs: SimpleNamespace(stdout=json.dumps(data)),
+            )
 
     def test_active_swap_is_detected(self):
         (self.proc / "swaps").write_text("Filename Type Size Used Priority\n/dev/vda2 partition 1024 0 -2\n")
@@ -155,6 +202,34 @@ class GuestProbeTests(unittest.TestCase):
             observe_guest(sys_root=self.sys, proc_root=self.proc,
                           run=lambda *args, **kwargs: SimpleNamespace(stdout='{"unexpected": []}'))
 
+
+    def test_device_tree_depth_limit_is_enforced_before_normalization(self):
+        data = lsblk_data()
+        node = data["blockdevices"][0]["children"][0]
+        for _ in range(16):
+            child = {"children": []}
+            node["children"] = [child]
+            node = child
+
+        with self.assertRaisesRegex(GuestProbeError, "maximum depth"):
+            observe_guest(
+                sys_root=self.sys,
+                proc_root=self.proc,
+                run=lambda *args, **kwargs: SimpleNamespace(stdout=json.dumps(data)),
+            )
+
+    def test_device_tree_node_limit_is_enforced_across_selected_roots(self):
+        data = lsblk_data()
+        data["blockdevices"][0]["children"].extend(
+            {"children": []} for _ in range(4093)
+        )
+
+        with self.assertRaisesRegex(GuestProbeError, "maximum node count"):
+            observe_guest(
+                sys_root=self.sys,
+                proc_root=self.proc,
+                run=lambda *args, **kwargs: SimpleNamespace(stdout=json.dumps(data)),
+            )
 
 if __name__ == "__main__":
     unittest.main()
