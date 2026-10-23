@@ -52,6 +52,33 @@ class TransactionJournalTests(unittest.TestCase):
             self.journal.append("phase_result", phase="preflight", status="SUCCEEDED")
         self.assertEqual(sync.call_count, 1)
 
+    def test_short_write_is_completed_before_success_is_reported(self):
+        from unittest.mock import patch
+        real_write = os.write
+        calls = {"count": 0}
+        def short_write(fd, data):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return real_write(fd, data[:7])
+            return real_write(fd, data)
+        with patch("lab.transaction_journal.os.write", side_effect=short_write):
+            self.journal.append("phase_intent", phase="preflight", status="STARTED")
+        self.assertGreater(calls["count"], 1)
+        self.assertEqual(len(self.journal.read()), 1)
+
+    def test_fsync_failure_requires_inspection_of_possible_persisted_record(self):
+        from unittest.mock import patch
+        with patch("lab.transaction_journal.os.fsync", side_effect=OSError("simulated fsync failure")):
+            with self.assertRaisesRegex(JournalError, "append failed"):
+                self.journal.append("phase_intent", phase="preflight", status="STARTED")
+        # The append may have reached the file before fsync failed. It must be
+        # read and reviewed; callers must not assume nothing was recorded.
+        events = self.journal.read()
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["event_type"], "phase_intent")
+        self.assertEqual(assess_recovery(events)["action"], "STOP_AND_PRESERVE_EVIDENCE")
+
+
     def test_destructive_failure_requires_preserving_evidence(self):
         self.journal.append("phase_intent", phase="partition_gpt", status="STARTED")
         self.journal.append("phase_result", phase="partition_gpt", status="FAILED",
