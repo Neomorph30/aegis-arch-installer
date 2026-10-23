@@ -42,5 +42,22 @@ class RecoveryTests(unittest.TestCase):
     def test_unknown_error_stops(self):
         self.assertEqual(classify_failure("read-only-probe","unknown").action,"stop_and_report")
 
+    def test_malformed_operation_type_stops_without_raising(self):
+        result = classify_failure(None, "timeout")
+        self.assertEqual(result.action, "stop_and_report")
+        self.assertEqual(result.attempts_allowed, 0)
+
+    def test_malformed_error_type_stops_without_raising(self):
+        result = classify_failure("inventory", ["timeout"])
+        self.assertEqual(result.action, "stop_and_report")
+        self.assertEqual(result.attempts_allowed, 0)
+
+    def test_invalid_attempt_values_never_retry(self):
+        for attempt in (0, -1, True, "1", None):
+            with self.subTest(attempt=attempt):
+                result = classify_failure("inventory", "timeout", attempt)
+                self.assertEqual(result.action, "stop_and_report")
+                self.assertEqual(result.attempts_allowed, 0)
+
 if __name__ == "__main__":
     unittest.main()
