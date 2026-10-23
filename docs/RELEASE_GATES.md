@@ -2,7 +2,7 @@
 
 ## Preview 0.2 — read-only; Layer 01 engineering requirements
 
-- [x] No disk installation/execution subsystem exists.
+- [x] No real disk installation executor exists; `aegis.virtual_executor` accepts only private synthetic regular files and writes a review journal, never target data.
 - [x] Device enumeration runs only allowlisted read-only commands.
 - [x] Fixture-based end-to-end CLI flow and interactive wizard.
 - [x] Storage proposal includes partition geometry, blocking hazards and states.
