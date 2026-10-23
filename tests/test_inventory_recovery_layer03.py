@@ -37,6 +37,28 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(classify_failure("inventory","timeout",2).action,"stop_and_report")
     def test_format_never_retried(self):
         self.assertEqual(classify_failure("format","timeout").action,"stop_and_inspect")
+
+    def test_every_mutating_operation_stops_without_retry(self):
+        operations = (
+            "partition", "format", "encrypt", "erase", "write",
+            "mount-write", "bootloader-write",
+        )
+        transient_errors = ("timeout", "temporary-unavailable", "interrupted")
+        for operation in operations:
+            for error in transient_errors:
+                for attempt in (1, 2, 99):
+                    with self.subTest(operation=operation, error=error, attempt=attempt):
+                        result = classify_failure(operation, error, attempt)
+                        self.assertEqual(result.action, "stop_and_inspect")
+                        self.assertEqual(result.attempts_allowed, 0)
+
+    def test_mutating_operation_normalization_cannot_bypass_no_retry(self):
+        for operation in (" FORMAT ", "Encrypt", "BOOTLOADER-WRITE"):
+            with self.subTest(operation=operation):
+                result = classify_failure(operation, "timeout")
+                self.assertEqual(result.action, "stop_and_inspect")
+                self.assertEqual(result.attempts_allowed, 0)
+
     def test_identity_mismatch_stops(self):
         self.assertEqual(classify_failure("inventory","identity-mismatch").action,"stop_and_report")
     def test_unknown_error_stops(self):
